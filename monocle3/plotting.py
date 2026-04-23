@@ -572,6 +572,13 @@ def plot_cells(
                 size=float(group_label_size),
                 inherit_aes=False,
             )
+            # R plotting.R:895-897: when labels are drawn in-plot and we are
+            # not colouring by gene expression, suppress the redundant colour
+            # legend (matches the R vignette's label-only look). Use
+            # ``guides(color='none', fill='none')`` — ggplot2_py's
+            # ``theme(legend_position='none')`` is not honoured in the current
+            # release, whereas ``guides`` is.
+            p = p + gg.guides(color="none", fill="none")
 
     return p
 
@@ -636,10 +643,10 @@ def plot_pc_variance_explained(adata: ad.AnnData):
     )
     return (
         gg.ggplot(df, gg.aes(x="pc", y="variance_explained"))
-        + gg.geom_point()
+        + gg.geom_point(alpha=0.5)
         + gg.theme_bw()
-        + gg.xlab("PC")
-        + gg.ylab("Variance explained")
+        + gg.xlab("PCA components")
+        + gg.ylab("Variance explained \n by each component")
     )
 
 
