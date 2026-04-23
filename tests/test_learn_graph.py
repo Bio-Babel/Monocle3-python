@@ -46,14 +46,14 @@ def test_order_cells_produces_pseudotime(prepared):
     pt = pseudotime(prepared)
     assert len(pt) == prepared.n_obs
     assert pt.min() >= 0.0
-    # Pseudotime at the root vertex's cells should be 0.
-    closest = prepared.uns["monocle3"]["principal_graph_aux"]["UMAP"][
-        "pr_graph_cell_proj_closest_vertex"
-    ]["V1"].to_numpy()
-    root_idx = node_names.index(root) + 1
-    cells_at_root = np.where(closest == root_idx)[0]
-    if cells_at_root.size:
-        assert float(pt.iloc[cells_at_root].min()) == 0.0
+    # Under the R-faithful algorithm the root's nearest *cell* (in UMAP space)
+    # is the source of shortest-path distances; that cell has pt == 0.
+    Y = prepared.uns["monocle3"]["principal_graph_aux"]["UMAP"]["dp_mst"]
+    umap = np.asarray(prepared.obsm["X_umap"], dtype=float)
+    root_idx = node_names.index(root)
+    d = np.sum((umap - Y[:, root_idx][None, :]) ** 2, axis=1)
+    nearest_cell = int(np.argmin(d))
+    assert float(pt.iloc[nearest_cell]) == 0.0
 
 
 def test_order_cells_requires_root(prepared):
