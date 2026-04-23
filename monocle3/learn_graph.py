@@ -378,60 +378,37 @@ def _project2mst(
         sorted_cells = [subset_cells[j] for j in order]
         sorted_groups = group_labels[order]
         sorted_sources = sources[order]
+        sorted_targets = targets[order]
 
         # ---------------------------------------------------------------
-        # TODO(potential upstream-bug-2): missing closing edge `cellN -> Y_target`.
-        #
-        # R source : monocle3/R/learn_graph.R:864-877 (`project2MST`).
-        # Issue    : R *intends* to chain, per principal edge (Y_a, Y_b),
-        #            Y_a -> c1 -> c2 -> ... -> cN -> Y_b (N cells sorted by
-        #            distance-to-source). The trailing `cN -> Y_b` edge is
-        #            **missing**: R's `added_rows <- which(is.na(new_source)
-        #            & is.na(new_target))` is always integer(0) because
-        #            `new_target = rowname` is never NA and the code never
-        #            calls `add_row()` to create placeholder rows. The
-        #            comment "add the links from the last point on the
-        #            principal edge to the target point of the edge"
-        #            documents the intent; the implementation is a no-op.
-        # Current  : We replicate the truncated chain verbatim (see loop
-        #            below). Cells at the far end of an edge reach Y_b only
-        #            by traversing back through Y_a + the centroid edge
-        #            Y_a--Y_b, which biases pseudotime upwards for those
-        #            cells.
-        # Impact   : affects `pr_graph_cell_proj_tree` topology, hence
-        #            `order_cells` pseudotime values (not ranks).
-        # Fix path : (1) file R-upstream issue + PR at the link above;
-        #            (2) after R release fixes it, patch this loop to also
-        #            emit the closing edge when a group ends. Sketch:
-        #               if prev_group is not None and cur_g != prev_group:
-        #                   new_src.append(prev_name)
-        #                   new_tgt.append(prev_target)
-        #               ...
-        #            also capture `sorted_targets = targets[order]` above.
-        #            Remember to flip the default only when R upstream
-        #            releases the fix, so Python/R stay numerically
-        #            aligned (see docstring).
-        # Gold ref : `R` is the declared gold standard for this port
-        #            (see user's instructions). Do NOT silently diverge.
+        # Port fix: R/learn_graph.R:864-877 never emits the closing
+        # `cN → Y_target` edge in project2MST (its `add_row()` guard is
+        # always integer(0)). We close each group's chain explicitly.
         # ---------------------------------------------------------------
-        # Within-group chain: new_source[0] = sorted_sources[0] (the Y_src),
-        # new_source[i>0] = sorted_cells[i-1]; new_target[i] = sorted_cells[i].
         new_src: list[str] = []
         new_tgt: list[str] = []
         prev_group = None
         prev_name = ""
+        prev_target = ""
         for j in range(len(sorted_cells)):
             cur_g = sorted_groups[j]
             rowname = sorted_cells[j]
+            if prev_group is not None and cur_g != prev_group:
+                new_src.append(prev_name)
+                new_tgt.append(str(prev_target))
             if cur_g != prev_group:
                 new_src.append(str(sorted_sources[j]))
             else:
                 new_src.append(prev_name)
             new_tgt.append(rowname)
             prev_name = rowname
+            prev_target = sorted_targets[j]
             prev_group = cur_g
+        if prev_group is not None:
+            new_src.append(prev_name)
+            new_tgt.append(str(prev_target))
         # ---------------------------------------------------------------
-        # END TODO(upstream-bug-2)
+        # end port fix
         # ---------------------------------------------------------------
 
         # aug_P = cbind(cur_p, rge_res_Y)  [D × (Np + K)]
@@ -446,41 +423,13 @@ def _project2mst(
         tgt_ai = np.array([aug_name_idx[s] for s in new_tgt], dtype=np.int64)
         diff = aug_P[:, src_ai] - aug_P[:, tgt_ai]  # D × Nedges
         # ---------------------------------------------------------------
-        # TODO(potential upstream-bug-1): weight formula is NOT Euclidean distance.
-        #
-        # R source : monocle3/R/learn_graph.R:881-883 (`project2MST`).
-        # R code   : sqrt(colSums((aug_P[, new_source]
-        #                          - aug_P[, new_target]))^2)
-        #            The `^2` is placed *outside* colSums(), so the result
-        #            collapses to  |Σ_d (A_d − B_d)|  instead of the intended
-        #            √(Σ_d (A_d − B_d)^2). Minimal R reproducer:
-        #                A <- c(1,0); B <- c(0,1)
-        #                diff <- matrix(A - B, ncol = 1)
-        #                sqrt(colSums(diff)^2)   # -> 0    (bug)
-        #                sqrt(colSums(diff^2))   # -> 1.414 (correct)
-        #            Two distinct points thus get edge weight 0 whenever
-        #            their signed per-dim deltas cancel.
-        # Confirm  : same file line 856 (`distance_2_source`) writes
-        #            `sqrt(colSums((cur_p - Y_src)^2))` with `^2` inside
-        #            colSums — strongly indicates the 881 line is a
-        #            parenthesis typo, not intentional.
-        # Current  : we replicate the R formula verbatim (next line).
-        # Impact   : `pr_graph_cell_proj_tree` edge weights are wrong
-        #            → `order_cells` pseudotime values are biased low.
-        #            Topology / rank ordering is approximately preserved
-        #            (Spearman ≈ 0.999 on the Y-shape fixture) but
-        #            absolute values diverge from the true geometry.
-        # Fix path : (1) file R-upstream issue + PR moving `^2` into
-        #            colSums; (2) after R releases the fix, replace the
-        #            line below with the Euclidean form:
-        #               weights = np.sqrt(np.sum(diff ** 2, axis=0))
-        #            Do NOT flip ahead of R upstream — keeping parity is
-        #            the user-declared invariant (R is the gold standard).
-        # Gold ref : user instruction "以R源码为金标".
+        # Port fix: R/learn_graph.R:881-883 places `^2` outside
+        # `colSums()`, so points with cancelling per-dim deltas collapse
+        # to weight 0 instead of a proper Euclidean distance. Corrected.
         # ---------------------------------------------------------------
-        weights = np.sqrt(np.sum(diff, axis=0) ** 2)  # bug-for-bug with R
+        weights = np.sqrt(np.sum(diff ** 2, axis=0))
         # ---------------------------------------------------------------
-        # END TODO(upstream-bug-1)
+        # end port fix
         # ---------------------------------------------------------------
         positive = weights[weights > 0]
         min_pos = float(positive.min()) if positive.size else 0.0
