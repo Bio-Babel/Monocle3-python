@@ -41,3 +41,25 @@ def test_cluster_cells_louvain(synthetic_adata):
         synthetic_adata, cluster_method="louvain", random_seed=0, weight=True
     )
     assert "monocle3_clusters" in synthetic_adata.obs.columns
+
+
+def test_clusters_accessor_respects_reduction_method(synthetic_adata):
+    """R dispatches ``clusters`` / ``partitions`` per ``reduction_method``
+    (``methods-cell_data_set.R``). Python must raise on a reduction that was
+    never clustered rather than silently returning the default UMAP column.
+    """
+    import pytest
+
+    preprocess_cds(synthetic_adata, num_dim=10)
+    reduce_dimension(synthetic_adata, max_components=2, reduction_method="UMAP")
+    cluster_cells(synthetic_adata, reduction_method="UMAP", random_seed=1)
+
+    # Must succeed for the reduction that was actually clustered.
+    c = clusters(synthetic_adata, reduction_method="UMAP")
+    assert len(c) == synthetic_adata.n_obs
+
+    # Must raise a clear KeyError for a reduction that hasn't been clustered.
+    with pytest.raises(KeyError, match="reduction_method='tSNE'"):
+        clusters(synthetic_adata, reduction_method="tSNE")
+    with pytest.raises(KeyError, match="reduction_method='tSNE'"):
+        partitions(synthetic_adata, reduction_method="tSNE")

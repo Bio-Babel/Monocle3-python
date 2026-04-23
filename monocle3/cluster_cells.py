@@ -148,9 +148,16 @@ def _run_louvain(
     """Louvain via igraph.community_multilevel — take the best of *louvain_iter*."""
     import random as _random
 
+    louvain_iter = max(1, int(louvain_iter))
+    # R cluster_cells.R:373-375: "if(louvain_iter >= 2) random_seed <- NULL".
+    # A fixed seed across multiple iterations would collapse them to the same
+    # partition, defeating the "best of N" search.
+    if louvain_iter >= 2:
+        random_seed = None
+
     best_membership = None
     best_modularity = -np.inf
-    for _ in range(max(1, int(louvain_iter))):
+    for _ in range(louvain_iter):
         if random_seed is not None:
             ig.set_random_number_generator(_random.Random(int(random_seed)))
         part = g.community_multilevel(weights=weights)
@@ -337,21 +344,36 @@ def cluster_cells(
     return adata
 
 
+def _clusters_from_uns(
+    adata: ad.AnnData, reduction_method: str, kind: str,
+) -> pd.Series:
+    """Return a categorical Series for ``kind`` ∈ {"membership", "partitions"}.
+
+    R's accessors dispatch per reduction (``methods-cell_data_set.R``), so the
+    Python ones read from ``uns["monocle3"]["clusters"][reduction_method]``
+    (populated by :func:`cluster_cells`) rather than a single obs column.
+    """
+    slot = adata.uns.get("monocle3", {}).get("clusters", {}).get(reduction_method)
+    if slot is None or kind not in slot:
+        raise KeyError(
+            f"No {kind} for reduction_method={reduction_method!r}. "
+            f"Run cluster_cells(reduction_method={reduction_method!r}) first."
+        )
+    arr = np.asarray(slot[kind])
+    labels = [str(x + 1) for x in arr]
+    cats = [str(x) for x in sorted({int(v) + 1 for v in arr})]
+    return pd.Series(
+        pd.Categorical(labels, categories=cats),
+        index=adata.obs_names,
+        name=kind,
+    )
+
+
 def clusters(adata: ad.AnnData, reduction_method: str = "UMAP") -> pd.Series:
     """Return cluster assignments as a ``pandas.Series`` (categorical)."""
-    if _CLUSTER_COL not in adata.obs.columns:
-        raise KeyError(
-            f"{_CLUSTER_COL} not in adata.obs. Run cluster_cells first."
-        )
-    _ = reduction_method  # we keep a single canonical obs column
-    return adata.obs[_CLUSTER_COL]
+    return _clusters_from_uns(adata, reduction_method, "membership")
 
 
 def partitions(adata: ad.AnnData, reduction_method: str = "UMAP") -> pd.Series:
     """Return partition assignments as a ``pandas.Series`` (categorical)."""
-    if _PARTITION_COL not in adata.obs.columns:
-        raise KeyError(
-            f"{_PARTITION_COL} not in adata.obs. Run cluster_cells first."
-        )
-    _ = reduction_method
-    return adata.obs[_PARTITION_COL]
+    return _clusters_from_uns(adata, reduction_method, "partitions")
