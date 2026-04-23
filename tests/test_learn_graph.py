@@ -15,7 +15,7 @@ from monocle3 import (
 from monocle3.order_cells import pseudotime
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def prepared(synthetic_adata):
     preprocess_cds(synthetic_adata, num_dim=10)
     reduce_dimension(synthetic_adata, max_components=2)
@@ -23,13 +23,18 @@ def prepared(synthetic_adata):
     return synthetic_adata
 
 
-def test_learn_graph_creates_principal_graph(prepared):
+@pytest.fixture(scope="function")
+def with_graph(prepared):
     learn_graph(
         prepared,
         learn_graph_control={"ncenter": 20, "minimal_branch_len": 3,
                              "maxiter": 5},
     )
-    uns = prepared.uns["monocle3"]
+    return prepared
+
+
+def test_learn_graph_creates_principal_graph(with_graph):
+    uns = with_graph.uns["monocle3"]
     assert "principal_graph" in uns
     g = uns["principal_graph"]["UMAP"]
     assert g.vcount() > 0
@@ -38,8 +43,8 @@ def test_learn_graph_creates_principal_graph(prepared):
     assert "pr_graph_cell_proj_closest_vertex" in aux
 
 
-def test_order_cells_produces_pseudotime(prepared):
-    # Reuse the learned graph from the previous test.
+def test_order_cells_produces_pseudotime(with_graph):
+    prepared = with_graph
     node_names = prepared.uns["monocle3"]["principal_graph"]["UMAP"].vs["name"]
     root = node_names[0]
     order_cells(prepared, root_pr_nodes=[root])
@@ -56,6 +61,6 @@ def test_order_cells_produces_pseudotime(prepared):
     assert float(pt.iloc[nearest_cell]) == 0.0
 
 
-def test_order_cells_requires_root(prepared):
+def test_order_cells_requires_root(with_graph):
     with pytest.raises(ValueError, match="root_pr_nodes or root_cells"):
-        order_cells(prepared)
+        order_cells(with_graph)

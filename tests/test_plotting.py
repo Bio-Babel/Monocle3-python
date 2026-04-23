@@ -23,7 +23,7 @@ from monocle3 import (
 )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def prepared(synthetic_adata):
     preprocess_cds(synthetic_adata, num_dim=10)
     reduce_dimension(synthetic_adata, max_components=2)
