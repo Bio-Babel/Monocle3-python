@@ -144,8 +144,7 @@ def new_cell_data_set(
     adata = ad.AnnData(X=X.T.tocsr(), obs=obs, var=var)
 
     # Default monocle3 uns namespace.
-    uns = ensure_monocle_uns(adata)
-    uns["cds_version"] = "1.4.26"
+    ensure_monocle_uns(adata)
 
     # Mirror R: estimate_size_factors is called in the constructor.
     estimate_size_factors(adata)

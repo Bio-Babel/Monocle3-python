@@ -1,6 +1,6 @@
 # monocle3-python
 
-Python port of the R [monocle3](https://cole-trapnell-lab.github.io/monocle3/) package. Monocle 3 performs clustering, differential expression, and trajectory analysis for single-cell RNA-seq data — this port preserves the semantics of the R orchestration while replacing the `cell_data_set` S4 container with `anndata.AnnData` and delegating every non-Monocle-specific algorithm to the scverse ecosystem (scanpy, umap-learn, leidenalg, statsmodels, …).
+Python port of the R [monocle3](https://cole-trapnell-lab.github.io/monocle3/) package. Monocle 3 performs clustering, differential expression, and trajectory analysis for single-cell RNA-seq data — this port preserves the semantics of the R orchestration while replacing the `cell_data_set` S4 container with `anndata.AnnData` and delegating every non-Monocle-specific algorithm to the scverse ecosystem (umap-learn, leidenalg, statsmodels, …).
 
 ## Quick start
 

@@ -7,7 +7,8 @@ for callers to import directly as well.
 
 from __future__ import annotations
 
-__version__ = "1.4.26+4f4239a"
+__version__ = "1.4.26"
+__r_commit__ = "4f4239a"
 
 from ._accessors import size_factors
 from .alignment import align_cds
@@ -53,6 +54,7 @@ from .reduce_dimensions import reduce_dimension
 
 __all__ = [
     "__version__",
+    "__r_commit__",
     "aggregate_gene_expression",
     "align_cds",
     "cluster_cells",
