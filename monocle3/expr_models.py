@@ -416,42 +416,88 @@ def coefficient_table(model_tbl: pd.DataFrame, pseudo_count: float = 0.01) -> pd
     return out
 
 
+_NA_GLANCE = {
+    "null_deviance": np.nan,
+    "df_null": np.nan,
+    "logLik": np.nan,
+    "AIC": np.nan,
+    "BIC": np.nan,
+    "deviance": np.nan,
+    "df_residual": np.nan,
+}
+
+
 def _glance_one(model) -> dict:
-    """Return a ``broom::glance``-style row for a single fitted model."""
+    """Return a ``broom::glance``-style row for a single fitted model.
+
+    R monocle3 (``R/expr_models.R::evaluate_fits``) dispatches on the
+    R class of ``model``:
+
+    - ``negbin`` (``MASS::glm.nb``) → full row; ``BIC`` inherits
+      ``stats::AIC(m)`` verbatim from R (same value as the ``AIC`` column).
+    - ``zeroinfl`` (``pscl::zeroinfl``) → ``null_deviance`` / ``deviance``
+      are ``NA``; ``BIC`` again equals the ``AIC`` value.
+    - ``speedglm`` (poisson / quasipoisson / gaussian / binomial via
+      ``speedglm::speedglm``) → ``BIC`` is always ``NA``. For quasi
+      families ``speedglm`` sets ``logLik`` / ``AIC`` to ``NA`` too.
+    - anything else → all-``NA`` row.
+
+    The Python fits map onto these classes as:
+
+    - ``NegativeBinomialResultsWrapper`` → ``negbin``.
+    - ``ZeroInflatedPoissonResultsWrapper`` /
+      ``ZeroInflatedNegativeBinomialPResultsWrapper`` → ``zeroinfl``.
+    - ``GLMResultsWrapper`` → ``speedglm`` (the ``_quasi_dispersion``
+      attribute, stamped in ``_fit_one`` for the quasipoisson path,
+      signals the quasi-family behaviour).
+    """
     if model is None:
-        return {
-            "null_deviance": np.nan,
-            "df_null": np.nan,
-            "logLik": np.nan,
-            "AIC": np.nan,
-            "BIC": np.nan,
-            "deviance": np.nan,
-            "df_residual": np.nan,
-        }
+        return dict(_NA_GLANCE)
+
+    cls = type(model).__name__
     try:
-        return {
-            "null_deviance": float(getattr(model, "null_deviance", np.nan)),
-            "df_null": float(getattr(model, "df_null", np.nan)),
-            "logLik": float(getattr(model, "llf", np.nan)),
-            "AIC": float(getattr(model, "aic", np.nan)),
-            "BIC": float(getattr(model, "bic", np.nan))
-            if getattr(model, "bic", None) is not None
-            else np.nan,
-            "deviance": float(getattr(model, "deviance", np.nan))
-            if getattr(model, "deviance", None) is not None
-            else np.nan,
-            "df_residual": float(getattr(model, "df_resid", np.nan)),
-        }
+        if cls == "NegativeBinomialResultsWrapper":
+            aic = float(model.aic)
+            return {
+                "null_deviance": float(getattr(model, "null_deviance", np.nan)),
+                "df_null": float(getattr(model, "df_null", np.nan)),
+                "logLik": float(model.llf),
+                "AIC": aic,
+                "BIC": aic,
+                "deviance": float(getattr(model, "deviance", np.nan)),
+                "df_residual": float(model.df_resid),
+            }
+        if cls in {
+            "ZeroInflatedPoissonResultsWrapper",
+            "ZeroInflatedNegativeBinomialPResultsWrapper",
+        }:
+            aic = float(model.aic)
+            return {
+                "null_deviance": np.nan,
+                "df_null": float(getattr(model, "df_null", np.nan)),
+                "logLik": float(model.llf),
+                "AIC": aic,
+                "BIC": aic,
+                "deviance": np.nan,
+                "df_residual": float(model.df_resid),
+            }
+        if cls == "GLMResultsWrapper":
+            is_quasi = hasattr(model, "_quasi_dispersion")
+            # R speedglm sets m$nulldf = n - 1 (intercept-only null).
+            df_null = float(model.nobs - 1)
+            return {
+                "null_deviance": float(getattr(model, "null_deviance", np.nan)),
+                "df_null": df_null,
+                "logLik": np.nan if is_quasi else float(model.llf),
+                "AIC": np.nan if is_quasi else float(model.aic),
+                "BIC": np.nan,
+                "deviance": float(getattr(model, "deviance", np.nan)),
+                "df_residual": float(model.df_resid),
+            }
     except Exception:
-        return {
-            "null_deviance": np.nan,
-            "df_null": np.nan,
-            "logLik": np.nan,
-            "AIC": np.nan,
-            "BIC": np.nan,
-            "deviance": np.nan,
-            "df_residual": np.nan,
-        }
+        return dict(_NA_GLANCE)
+
+    return dict(_NA_GLANCE)
 
 
 def evaluate_fits(model_tbl: pd.DataFrame) -> pd.DataFrame:

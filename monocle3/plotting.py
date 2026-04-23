@@ -12,8 +12,11 @@ import warnings
 from typing import Any, Sequence
 
 import anndata as ad
+import ggplot2_py as gg
 import numpy as np
 import pandas as pd
+import pheatmap as _ph
+from ggrepel_py import geom_text_repel
 from scipy import sparse as sp
 
 from ._utils import get_monocle_uns
@@ -339,8 +342,6 @@ def plot_cells(
     label_principal_points: bool = False,
 ):
     """Monocle3's umbrella 2D cell scatter (``plot_cells``)."""
-    import ggplot2_py as gg
-    from ggrepel_py import geom_text_repel
 
     if rasterize:
         warnings.warn(
@@ -424,7 +425,7 @@ def plot_cells(
         if len(na_sub) > 0:
             p = p + gg.geom_point(
                 data=na_sub, size=cell_size, stroke=cell_stroke,
-                color="grey80", alpha=alpha,
+                colour="grey80", alpha=alpha,
             )
         p = p + gg.geom_point(
             gg.aes(color="expression"),
@@ -495,8 +496,10 @@ def plot_cells(
                     y="source_y", yend="target_y",
                 ),
                 data=edges,
-                size=float(trajectory_graph_segment_size),
-                color=str(trajectory_graph_color),
+                linewidth=float(trajectory_graph_segment_size),
+                colour=str(trajectory_graph_color),
+                linetype="solid",
+                na_rm=True,
             )
             marker_size = float(graph_label_size) * 1.5
             marker_stroke = float(trajectory_graph_segment_size)
@@ -596,29 +599,30 @@ def _draw_node_labels(
     use_repel: bool = False,
 ):
     """Add a filled-circle + integer/text label layer to a principal-graph plot."""
-    import ggplot2_py as gg
 
     p = p + gg.geom_point(
         gg.aes(x="prin_graph_dim_1", y="prin_graph_dim_2"),
         data=df,
-        shape=21, fill=fill, color=color,
+        shape=21, fill=fill, colour=color,
         size=marker_size, stroke=marker_stroke,
+        na_rm=True,
         inherit_aes=False,
     )
     if use_repel:
-        from ggrepel_py import geom_text_repel
         p = p + geom_text_repel(
             mapping=gg.aes(
                 x="prin_graph_dim_1", y="prin_graph_dim_2", label=label_col,
             ),
-            data=df, size=text_size, color=text_color, inherit_aes=False,
+            data=df, size=text_size, colour=text_color, na_rm=True,
+            inherit_aes=False,
         )
     else:
         p = p + gg.geom_text(
             gg.aes(
                 x="prin_graph_dim_1", y="prin_graph_dim_2", label=label_col,
             ),
-            data=df, size=text_size, color=text_color, inherit_aes=False,
+            data=df, size=text_size, colour=text_color, na_rm=True,
+            inherit_aes=False,
         )
     return p
 
@@ -629,7 +633,6 @@ def _draw_node_labels(
 
 
 def plot_pc_variance_explained(adata: ad.AnnData):
-    import ggplot2_py as gg
 
     model = get_monocle_uns(adata, "preprocess", "PCA")
     if model is None:
@@ -689,7 +692,6 @@ def plot_percent_cells_positive(
       uses the narrower ``alpha/2`` / ``1 - alpha/2`` quantiles exactly as
       R does — we mirror R here rather than "fix" it.
     """
-    import ggplot2_py as gg
 
     if adata.n_vars > 100:
         raise ValueError(
@@ -861,7 +863,6 @@ def plot_genes_in_pseudotime(
     Fits ``trend_formula`` via :func:`fit_models` and overlays the model
     expectation on the per-cell scatter, matching R's default trend line.
     """
-    import ggplot2_py as gg
     from .expr_models import fit_models, model_predictions
 
     if "monocle3_pseudotime" not in adata_subset.obs.columns:
@@ -1035,7 +1036,6 @@ def plot_genes_violin(
     - ``stat_summary(fun=median, geom="point", size=1, color="black")``
       draws a small black dot at each violin's median.
     """
-    import ggplot2_py as gg
 
     if adata_subset.n_vars > 100:
         raise ValueError(
@@ -1091,7 +1091,7 @@ def plot_genes_violin(
         gg.ggplot(df, gg.aes(x=group_col_name, y="expression"))
         + gg.geom_violin(gg.aes(fill=group_col_name), scale="width")
         + gg.guides(fill="none")
-        + gg.stat_summary(fun=np.median, geom="point", size=1, color="black")
+        + gg.stat_summary(fun=np.median, geom="point", size=1, colour="black")
     )
 
     facet_kwargs = {"ncol": int(ncol), "scales": "free_y"}
@@ -1149,9 +1149,7 @@ def plot_genes_by_group(
     - ``flip_percentage_mean`` swaps which axis (major/minor) carries mean
       vs. percentage.
     """
-    import ggplot2_py as gg
     from .preprocess import normalized_counts as _norm_counts
-    import pheatmap as _ph
 
     if ordering_type not in {"cluster_row_col", "maximal_on_diag", "none"}:
         raise ValueError(
