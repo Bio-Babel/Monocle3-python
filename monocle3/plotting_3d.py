@@ -13,6 +13,8 @@ from typing import Any, Sequence
 import anndata as ad
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
+import scales
 
 from ._utils import get_monocle_uns
 from .cluster_cells import clusters as _clusters, partitions as _partitions
@@ -26,8 +28,6 @@ def _set2_palette(n: int) -> list[str]:
     is a faithful port; for ``n > 8`` we recycle the 8 available Set2 colors
     the way R does once the RColorBrewer warning fires and plotly recycles.
     """
-    import scales
-
     raw = scales.brewer_pal(palette="Set2")(max(3, n))
     # scales returns None entries when n exceeds the palette.
     base = [c for c in raw if c is not None]
@@ -66,8 +66,6 @@ def plot_cells_3d(
     ``trajectory_graph_segment_size``; NA-valued expression is rendered in
     lightgrey with opacity 0.4.
     """
-    import plotly.graph_objects as go
-
     if norm_method not in {"log", "size_only"}:
         raise ValueError(f"norm_method must be 'log' or 'size_only', got {norm_method!r}")
     if x is not None or y is not None or z is not None:

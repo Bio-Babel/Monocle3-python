@@ -9,6 +9,7 @@ reference AnnData that holds the fitted models.
 """
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import anndata as ad
@@ -89,7 +90,6 @@ def _align_query_genes_to_model(
             "reference model gene set."
         )
     if len(intersect_names) / max(len(query_var_names), 1) < 0.5:
-        import warnings
         warnings.warn(
             "preprocess_transform: fewer than half the query genes are in "
             "the reference — are both prepared from the same gene set?",

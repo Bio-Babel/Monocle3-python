@@ -14,11 +14,14 @@ from __future__ import annotations
 from typing import Any
 
 import anndata as ad
+import hnswlib
 import igraph as ig
 import leidenalg
 import numpy as np
 import pandas as pd
+import umap as umap_module
 from scipy import sparse as sp
+from sklearn.neighbors import NearestNeighbors
 
 from ._utils import get_monocle_uns
 from .cluster_cells import _compute_partitions, _make_knn_graph, _run_leiden
@@ -61,8 +64,6 @@ def _precomputed_knn_for_umap(
     if nn_method in ("annoy", "nndescent"):
         return None
     if nn_method == "fnn":
-        from sklearn.neighbors import NearestNeighbors
-
         nn = NearestNeighbors(
             n_neighbors=n_neighbors, algorithm="brute", metric=metric,
             n_jobs=int(cores),
@@ -70,8 +71,6 @@ def _precomputed_knn_for_umap(
         dist, idx = nn.kneighbors(X, n_neighbors=n_neighbors)
         return idx.astype(np.int64), dist.astype(np.float64), None
     if nn_method == "hnsw":
-        import hnswlib
-
         space = {"euclidean": "l2", "cosine": "cosine"}.get(metric)
         if space is None:
             raise ValueError(
@@ -127,8 +126,6 @@ def find_gene_modules(
     del verbose, kwargs
     if reduction_method != "UMAP":
         raise NotImplementedError("Only reduction_method='UMAP' is supported")
-
-    import umap as umap_module
 
     # Subset gene loadings to the genes present in adata (handles post-subset CDS).
     loadings = _gene_loadings(adata, preprocess_method)

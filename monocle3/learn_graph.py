@@ -23,7 +23,10 @@ import igraph as ig
 import numpy as np
 import pandas as pd
 from scipy import sparse as sp
+from scipy.stats import false_discovery_control
+from sklearn.cluster import KMeans
 
+from ._clustering_cpp import pnorm_over_mat
 from ._utils import ensure_monocle_uns
 from .nearest_neighbors import search_nn_matrix
 
@@ -139,8 +142,6 @@ def _kmeans_with_init(
     points: np.ndarray, n_clusters: int, seed: int = 2016
 ) -> tuple[np.ndarray, np.ndarray]:
     """k-means with evenly-spaced initial centers plus tiny noise."""
-    from sklearn.cluster import KMeans
-
     n = points.shape[0]
     idx = np.linspace(0, n - 1, num=n_clusters).astype(int)
     centers_init = points[idx].astype(float)
@@ -539,9 +540,6 @@ def _project2mst(
 
 def _partition_q_matrix(g: ig.Graph, membership: np.ndarray) -> np.ndarray:
     """Compute the PAGA-like q-value matrix used by ``connect_tips``."""
-    from ._clustering_cpp import pnorm_over_mat
-    from scipy.stats import false_discovery_control
-
     unique = np.unique(membership)
     k = unique.size
     row = np.arange(membership.size)

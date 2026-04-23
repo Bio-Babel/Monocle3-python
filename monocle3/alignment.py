@@ -13,6 +13,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import patsy
+import scanorama
 
 from ._utils import ensure_monocle_uns
 
@@ -190,8 +191,6 @@ def _scanorama_correct(
     direction of correction (which cells move towards which batch) is
     preserved.
     """
-    import scanorama
-
     unique_batches = pd.unique(pd.Series(batch))
     if len(unique_batches) < 2:
         return coords.astype(np.float64, copy=True)

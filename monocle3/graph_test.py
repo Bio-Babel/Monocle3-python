@@ -15,7 +15,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 from scipy import sparse as sp
-from scipy.stats import false_discovery_control
+from scipy.stats import false_discovery_control, norm as _norm
 
 from ._clustering_cpp import jaccard_coeff
 from ._utils import get_monocle_uns, sparse_row_sums
@@ -86,7 +86,6 @@ def _moran_per_row(
     if VI_rand <= 0:
         return I, 0.0, 1.0
     Z = (I - EI) / np.sqrt(VI_rand)
-    from scipy.stats import norm as _norm
     if alternative == "two.sided":
         p = 2.0 * _norm.sf(abs(Z))
     elif alternative == "greater":
@@ -143,7 +142,6 @@ def _geary_per_row(
     # Sign convention: "greater" tests stronger positive spatial
     # autocorrelation, which corresponds to C < 1, hence ZC > 0.
     ZC = (EC - C) / np.sqrt(VC)
-    from scipy.stats import norm as _norm
     if alternative == "two.sided":
         p = 2.0 * _norm.sf(abs(ZC))
     elif alternative == "greater":

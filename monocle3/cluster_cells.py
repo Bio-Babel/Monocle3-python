@@ -9,6 +9,7 @@ significance-testing stage in ``compute_partitions`` which reuses the
 
 from __future__ import annotations
 
+import random as _random
 from typing import Any
 
 import anndata as ad
@@ -152,8 +153,6 @@ def _run_louvain(
 
     Returns ``(membership, modularity)``.
     """
-    import random as _random
-
     louvain_iter = max(1, int(louvain_iter))
     # R cluster_cells.R:373-375: "if(louvain_iter >= 2) random_seed <- NULL".
     # A fixed seed across multiple iterations would collapse them to the same

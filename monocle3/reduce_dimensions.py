@@ -15,6 +15,8 @@ from typing import Any
 
 import anndata as ad
 import numpy as np
+import openTSNE
+import umap as umap_module
 
 from ._utils import ensure_monocle_uns, get_monocle_uns
 
@@ -127,8 +129,6 @@ def reduce_dimension(
             )
         adata.obsm["X_aligned"] = preprocess_mat.copy()
     elif reduction_method == "tSNE":
-        import openTSNE
-
         # Pass perplexity through unchanged. openTSNE will raise on invalid
         # values; we emit a pre-emptive warning so the cause is obvious.
         n_samples = preprocess_mat.shape[0]
@@ -160,8 +160,6 @@ def reduce_dimension(
             "model": embedding,
         }
     else:  # UMAP
-        import umap as umap_module
-
         if cores > 1:
             warnings.warn(
                 "reduce_dimension may produce slightly different output each "

@@ -16,7 +16,10 @@ from __future__ import annotations
 from typing import Any
 
 import anndata as ad
+import hnswlib
 import numpy as np
+import pynndescent
+from sklearn.neighbors import NearestNeighbors
 
 from ._utils import ensure_monocle_uns
 
@@ -115,7 +118,6 @@ def make_nn_index(
                 f"make_nn_index: metric {metric!r} not supported for 'annoy'. "
                 f"R RcppAnnoy accepts: {sorted(_ANNOY_METRICS)}."
             )
-        import pynndescent
 
         index = pynndescent.NNDescent(
             X,
@@ -143,7 +145,6 @@ def make_nn_index(
                 f"make_nn_index: metric {metric!r} not supported for 'hnsw'. "
                 f"R RcppHNSW accepts: {sorted(_HNSW_METRIC_MAP)}."
             )
-        import hnswlib
 
         idx = hnswlib.Index(space=_HNSW_METRIC_MAP[metric], dim=n_features)
         idx.init_index(
@@ -271,7 +272,6 @@ def search_nn_matrix(
     k = min(int(k), np.asarray(subject_matrix).shape[0])
 
     if method == "nn2":
-        from sklearn.neighbors import NearestNeighbors
 
         S = np.asarray(subject_matrix, dtype=np.float64)
         Q = np.asarray(query_matrix, dtype=np.float64)
