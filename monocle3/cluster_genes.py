@@ -172,7 +172,7 @@ def find_gene_modules(
         embedding, k=int(k), nn_control=nn_ctrl,
         cell_names=list(loadings.index), weight=bool(weight),
     )
-    membership = _run_leiden(
+    membership, _modularity = _run_leiden(
         g,
         resolution=resolution,
         num_iter=int(leiden_iter),
@@ -181,7 +181,7 @@ def find_gene_modules(
     partition_arr = (
         _compute_partitions(g, membership, qval_thresh=float(partition_qval))
         if len(set(membership)) > 1
-        else np.zeros_like(membership)
+        else np.ones_like(membership, dtype=np.int64)
     )
 
     df = pd.DataFrame(
@@ -192,8 +192,8 @@ def find_gene_modules(
                 categories=[str(x) for x in sorted(set(membership + 1))],
             ),
             "supermodule": pd.Categorical(
-                [str(p + 1) for p in partition_arr],
-                categories=[str(x) for x in sorted(set(partition_arr + 1))],
+                [str(p) for p in partition_arr],
+                categories=[str(x) for x in sorted(set(int(v) for v in partition_arr))],
             ),
             "dim_1": embedding[:, 0],
         }

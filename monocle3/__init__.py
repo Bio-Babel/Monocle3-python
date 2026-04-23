@@ -23,6 +23,7 @@ from .expr_models import (
 )
 from .find_markers import generate_garnett_marker_file, top_markers
 from .graph_test import graph_test
+from .label_transfer import fix_missing_cell_labels, transfer_cell_labels
 from .learn_graph import learn_graph
 from .nearest_neighbors import (
     make_nn_index,
@@ -47,6 +48,7 @@ from .preprocess import (
     normalized_counts,
     preprocess_cds,
 )
+from .projection import preprocess_transform, reduce_dimension_transform
 from .reduce_dimensions import reduce_dimension
 
 __all__ = [
@@ -62,6 +64,7 @@ __all__ = [
     "evaluate_fits",
     "find_gene_modules",
     "fit_models",
+    "fix_missing_cell_labels",
     "generate_garnett_marker_file",
     "graph_test",
     "learn_graph",
@@ -81,12 +84,15 @@ __all__ = [
     "plot_pc_variance_explained",
     "plot_percent_cells_positive",
     "preprocess_cds",
+    "preprocess_transform",
     "principal_graph",
     "pseudotime",
     "reduce_dimension",
+    "reduce_dimension_transform",
     "search_nn_index",
     "search_nn_matrix",
     "set_cds_nn_index",
     "size_factors",
     "top_markers",
+    "transfer_cell_labels",
 ]

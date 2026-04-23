@@ -151,10 +151,13 @@ def reduce_dimension(
         )
         embedding = tsne.fit(preprocess_mat)
         adata.obsm["X_tsne"] = np.asarray(embedding, dtype=np.float64)
+        # Persist the TSNEEmbedding object so reduce_dimension_transform can
+        # call `embedding.transform(X_new)` to project new cells later.
         uns["reduce_dim"]["tSNE"] = {
             "preprocess_method": preprocess_method,
             "max_components": int(max_components),
             "perplexity": perp,
+            "model": embedding,
         }
     else:  # UMAP
         import umap as umap_module
@@ -192,8 +195,9 @@ def reduce_dimension(
             "umap_metric": umap_metric,
             "umap_min_dist": float(umap_min_dist),
             "umap_n_neighbors": n_neighbors,
+            # Fitted umap.UMAP object, used by reduce_dimension_transform().
+            "model": umap_model,
         }
-        uns["UMAP_model"] = umap_model
 
     # Clear stale principal graph entries for this reduction.
     for slot in ("principal_graph", "principal_graph_aux", "clusters"):

@@ -33,13 +33,14 @@ import numpy as np
 import pandas as pd
 import patsy
 from scipy import sparse as sp
-from scipy.stats import chi2, false_discovery_control
+from scipy.stats import chi2
 import statsmodels.api as sm
 from statsmodels.discrete.count_model import (
     ZeroInflatedNegativeBinomialP,
     ZeroInflatedPoisson,
 )
 from statsmodels.discrete.discrete_model import NegativeBinomial as _NegBin
+from statsmodels.stats.multitest import multipletests
 
 __all__ = [
     "fit_models",
@@ -48,6 +49,20 @@ __all__ = [
     "evaluate_fits",
     "model_predictions",
 ]
+
+
+import re as _re
+
+# Translate patsy-style term names ("x[T.lvl]", "Intercept") to the names R's
+# ``model.matrix`` produces ("xlvl", "(Intercept)") so downstream callers
+# filter by R-compatible strings.
+_PATSY_FACTOR = _re.compile(r"([^\[\]\s]+?)\[T\.([^\]]+)\]")
+
+
+def _to_r_term(name: str) -> str:
+    if name == "Intercept":
+        return "(Intercept)"
+    return _PATSY_FACTOR.sub(r"\1\2", name)
 
 
 _SUPPORTED_FAMILIES = {
@@ -223,66 +238,153 @@ def fit_models(
     return pd.DataFrame(rows)
 
 
+def _log2_normalized_effect(
+    params: np.ndarray,
+    intercept_idx: int | None,
+    link_inv,
+    pseudo_count: float,
+) -> np.ndarray:
+    """log2((linkinv(β + β_0) + pc) / (linkinv(β_0) + pc)), 0 at intercept."""
+    out = np.zeros_like(params)
+    if intercept_idx is None:
+        return out
+    intercept = params[intercept_idx]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out[:] = np.log2(
+            (link_inv(params + intercept) + pseudo_count)
+            / (link_inv(intercept) + pseudo_count)
+        )
+    out[intercept_idx] = 0.0
+    return out
+
+
+def _split_zi_params(model, design_names: list[str]):
+    """For a ZeroInflated* model, partition params into ``(count_slice,
+    zero_slice)`` lists of ``(names, params, bse, tvalues, pvalues)``.
+
+    statsmodels orders ZIP params as ``[inflate_const, inflate_x1, ...,
+    const, x1, ...]`` — inflation (zero) submodel first, count submodel
+    second. Returns per-submodel name lists matching R's
+    ``model_summary$coefficients$count`` / ``$zero`` layout.
+    """
+    params = np.asarray(model.params, dtype=float)
+    bse = np.asarray(model.bse, dtype=float)
+    tvalues = np.asarray(model.tvalues, dtype=float)
+    pvalues = np.asarray(model.pvalues, dtype=float)
+
+    k_inflate = int(model.model.k_inflate)
+    exog_names = list(model.model.exog_names)
+    zero_names_raw = [n.removeprefix("inflate_") for n in exog_names[:k_inflate]]
+    # Rename patsy factor contrasts → R naming style.
+    zero_names = [_to_r_term(
+        "(Intercept)" if n == "const" else n
+    ) for n in zero_names_raw]
+    count_names = list(design_names)
+
+    zero = {
+        "names": zero_names,
+        "params": params[:k_inflate],
+        "std_err": bse[:k_inflate],
+        "test_val": tvalues[:k_inflate],
+        "p_value": pvalues[:k_inflate],
+    }
+    count = {
+        "names": count_names,
+        "params": params[k_inflate : k_inflate + len(count_names)],
+        "std_err": bse[k_inflate : k_inflate + len(count_names)],
+        "test_val": tvalues[k_inflate : k_inflate + len(count_names)],
+        "p_value": pvalues[k_inflate : k_inflate + len(count_names)],
+    }
+    return count, zero
+
+
 def coefficient_table(model_tbl: pd.DataFrame, pseudo_count: float = 0.01) -> pd.DataFrame:
-    """Extract Wald coefficients and BH q-values from a fit table.
+    """Extract Wald coefficients and Holm-adjusted q-values from a fit table.
 
     Output columns mirror ``broom::tidy(model)``:
     ``term, estimate, std_err, test_val, p_value, normalized_effect,
     model_component, gene_id, gene_short_name, num_cells_expressed,
-    status, q_value``.
+    status, q_value``. Zero-inflated models emit both ``count`` and
+    ``zero`` rows per gene (matching R's ``model_component`` column).
     """
     frames: list[pd.DataFrame] = []
     for _, row in model_tbl.iterrows():
         model = row["model"]
         if model is None:
             continue
-        try:
-            params = np.asarray(model.params, dtype=float)
-            std_err = np.asarray(model.bse, dtype=float)
-            tvals = np.asarray(model.tvalues, dtype=float)
-            pvals = np.asarray(model.pvalues, dtype=float)
-            names = list(row["_design_info"].column_names)
-        except Exception:
-            continue
-        # statsmodels inserts NB's dispersion alpha for NegativeBinomial; skip it.
-        if params.size > len(names):
-            params = params[: len(names)]
-            std_err = std_err[: len(names)]
-            tvals = tvals[: len(names)]
-            pvals = pvals[: len(names)]
-        intercept_idx = next(
-            (k for k, n in enumerate(names) if n in ("Intercept", "(Intercept)")),
-            None,
-        )
-        normalized_effect = np.zeros_like(params)
-        if intercept_idx is not None:
-            intercept = params[intercept_idx]
-            family_inv = getattr(model, "family", None)
-            if family_inv is not None and hasattr(family_inv, "link"):
-                try:
-                    link = family_inv.link.inverse
-                except AttributeError:
-                    link = lambda x: np.exp(x)
-            else:
-                link = lambda x: np.exp(x)
-            with np.errstate(invalid="ignore", divide="ignore"):
-                normalized_effect = np.log2(
-                    (link(params + intercept) + pseudo_count)
-                    / (link(intercept) + pseudo_count)
-                )
-            normalized_effect[intercept_idx] = 0.0
+        raw_names = list(row["_design_info"].column_names)
+        names = [_to_r_term(n) for n in raw_names]
 
-        df = pd.DataFrame(
-            {
+        if isinstance(model, (ZeroInflatedPoisson, ZeroInflatedNegativeBinomialP)):
+            try:
+                count, zero = _split_zi_params(model, names)
+            except Exception:
+                continue
+            # Count submodel — normalize effect via exp (Poisson link).
+            intercept_idx_c = next(
+                (k for k, n in enumerate(count["names"])
+                 if n in ("Intercept", "(Intercept)")),
+                None,
+            )
+            df_c = pd.DataFrame({
+                "term": count["names"],
+                "estimate": count["params"],
+                "std_err": count["std_err"],
+                "test_val": count["test_val"],
+                "p_value": count["p_value"],
+                "normalized_effect": _log2_normalized_effect(
+                    count["params"], intercept_idx_c, np.exp, pseudo_count
+                ),
+                "model_component": "count",
+            })
+            # Zero submodel — R sets normalized_effect = NA.
+            df_z = pd.DataFrame({
+                "term": zero["names"],
+                "estimate": zero["params"],
+                "std_err": zero["std_err"],
+                "test_val": zero["test_val"],
+                "p_value": zero["p_value"],
+                "normalized_effect": np.nan,
+                "model_component": "zero",
+            })
+            df = pd.concat([df_c, df_z], ignore_index=True)
+        else:
+            try:
+                params = np.asarray(model.params, dtype=float)
+                std_err = np.asarray(model.bse, dtype=float)
+                tvals = np.asarray(model.tvalues, dtype=float)
+                pvals = np.asarray(model.pvalues, dtype=float)
+            except Exception:
+                continue
+            # statsmodels NegativeBinomial appends a dispersion alpha — drop it.
+            if params.size > len(names):
+                params = params[: len(names)]
+                std_err = std_err[: len(names)]
+                tvals = tvals[: len(names)]
+                pvals = pvals[: len(names)]
+            intercept_idx = next(
+                (k for k, n in enumerate(names)
+                 if n in ("Intercept", "(Intercept)")),
+                None,
+            )
+            family_inv = getattr(model, "family", None)
+            link_inv = (
+                family_inv.link.inverse
+                if family_inv is not None and hasattr(family_inv, "link")
+                else np.exp
+            )
+            df = pd.DataFrame({
                 "term": names,
                 "estimate": params,
                 "std_err": std_err,
                 "test_val": tvals,
                 "p_value": pvals,
-                "normalized_effect": normalized_effect,
+                "normalized_effect": _log2_normalized_effect(
+                    params, intercept_idx, link_inv, pseudo_count
+                ),
                 "model_component": "count",
-            }
-        )
+            })
+
         df["gene_id"] = row["gene_id"]
         df["gene_short_name"] = row["gene_short_name"]
         df["num_cells_expressed"] = row["num_cells_expressed"]
@@ -301,12 +403,14 @@ def coefficient_table(model_tbl: pd.DataFrame, pseudo_count: float = 0.01) -> pd
 
     out = pd.concat(frames, ignore_index=True)
     out["q_value"] = 1.0
+    # R: `group_by(model_component, term) %>% mutate(q_value = p.adjust(p_value))`.
+    # Default p.adjust() method is Holm step-down (not BH).
     for (_mc, _term), idx in out.groupby(["model_component", "term"]).groups.items():
         subset_idx = np.asarray(idx)
         pvals = out.loc[subset_idx, "p_value"].to_numpy(dtype=float)
         valid = ~np.isnan(pvals)
         if valid.any():
-            qvals = false_discovery_control(pvals[valid], method="bh")
+            qvals = multipletests(pvals[valid], method="holm")[1]
             valid_idx = subset_idx[valid]
             out.loc[valid_idx, "q_value"] = qvals
     return out
@@ -384,7 +488,8 @@ def compare_models(
     q_value = np.ones_like(p_value)
     valid = ~np.isnan(p_value)
     if valid.any():
-        q_value[valid] = false_discovery_control(p_value[valid], method="bh")
+        # R `compare_models` adjusts with `stats::p.adjust()` default (Holm).
+        q_value[valid] = multipletests(p_value[valid], method="holm")[1]
     joined["q_value"] = q_value
     keep_cols = ["gene_id"]
     for col in ("gene_short_name", "num_cells_expressed"):
@@ -401,12 +506,22 @@ def model_predictions(
 ) -> np.ndarray:
     """Predict expression for each gene at *new_data*.
 
-    Returns a ``(n_genes, n_new_rows)`` ndarray.
+    Parameters
+    ----------
+    type : {"response", "link"}, default "response"
+        ``"response"`` returns predictions on the mean scale; ``"link"``
+        returns predictions on the linear-predictor scale. Matches R
+        ``stats::predict(..., type=)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n_genes, n_new_rows)`` array of predictions.
     """
     if not isinstance(new_data, pd.DataFrame):
         raise TypeError("new_data must be a pandas.DataFrame")
-    # Sanitise columns in new_data so dotted names line up with the
-    # design_info built on the training frame.
+    if type not in {"response", "link"}:
+        raise ValueError("type must be 'response' or 'link'")
     new_san, _ = _sanitize_columns(new_data, "")
     preds: list[np.ndarray] = []
     for _, row in model_tbl.iterrows():
@@ -416,7 +531,20 @@ def model_predictions(
             new_design = patsy.dmatrix(
                 design_info, data=new_san, return_type="dataframe"
             )
-            pred = np.asarray(model.predict(new_design.to_numpy(dtype=float)))
+            X = new_design.to_numpy(dtype=float)
+            if type == "link":
+                # statsmodels GLM has linear= param; ZI / NB expose
+                # `which="linear"` or require manual β·X evaluation.
+                pred_fn = getattr(model, "predict", None)
+                try:
+                    pred = np.asarray(model.predict(X, linear=True))
+                except TypeError:
+                    # Manual linear predictor for backends that don't
+                    # expose `linear=True` (e.g. discrete count models).
+                    beta = np.asarray(model.params, dtype=float)[: X.shape[1]]
+                    pred = X @ beta
+            else:
+                pred = np.asarray(model.predict(X))
         except Exception:
             pred = np.full(new_data.shape[0], np.nan)
         preds.append(pred)

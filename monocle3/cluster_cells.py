@@ -17,7 +17,8 @@ import leidenalg
 import numpy as np
 import pandas as pd
 from scipy import sparse as sp
-from scipy.stats import false_discovery_control
+
+from statsmodels.stats.multitest import multipletests
 
 from ._clustering_cpp import jaccard_coeff, pnorm_over_mat
 from ._utils import ensure_monocle_uns, get_monocle_uns
@@ -107,8 +108,8 @@ def _run_leiden(
     num_iter: int,
     random_seed: int | None,
     partition_type: str = "CPMVertexPartition",
-) -> np.ndarray:
-    """Leiden partition via leidenalg. Returns per-vertex membership."""
+) -> tuple[np.ndarray, float]:
+    """Leiden partition via leidenalg. Returns ``(membership, modularity)``."""
     if partition_type in {
         "ModularityVertexPartition",
         "SignificanceVertexPartition",
@@ -136,7 +137,9 @@ def _run_leiden(
     kwargs["n_iterations"] = int(num_iter)
 
     part = leidenalg.find_partition(g, partition_cls, **kwargs)
-    return np.asarray(part.membership, dtype=np.int64)
+    membership = np.asarray(part.membership, dtype=np.int64)
+    modularity = float(g.modularity(part.membership))
+    return membership, modularity
 
 
 def _run_louvain(
@@ -144,8 +147,11 @@ def _run_louvain(
     weights: np.ndarray | None,
     louvain_iter: int,
     random_seed: int | None,
-) -> np.ndarray:
-    """Louvain via igraph.community_multilevel — take the best of *louvain_iter*."""
+) -> tuple[np.ndarray, float]:
+    """Louvain via igraph.community_multilevel — take the best of *louvain_iter*.
+
+    Returns ``(membership, modularity)``.
+    """
     import random as _random
 
     louvain_iter = max(1, int(louvain_iter))
@@ -166,7 +172,7 @@ def _run_louvain(
             best_modularity = modularity
             best_membership = np.asarray(part.membership, dtype=np.int64)
     assert best_membership is not None
-    return best_membership
+    return best_membership, float(best_modularity)
 
 
 def _compute_partitions(
@@ -174,11 +180,12 @@ def _compute_partitions(
     membership: np.ndarray,
     qval_thresh: float,
 ) -> np.ndarray:
-    """Partition-assignment helper — matches R ``compute_partitions``."""
+    """Partition-assignment helper. Returns a 1-indexed integer array
+    matching R's ``cluster_cells.R::compute_partitions`` factor output."""
     membership = np.asarray(membership)
     unique_clusters = np.unique(membership)
     if unique_clusters.size < 2:
-        return np.zeros_like(membership)
+        return np.ones_like(membership, dtype=np.int64)
 
     # 0/1 membership indicator matrix M: (n_cells, n_clusters).
     cluster_to_idx = {c: i for i, c in enumerate(unique_clusters)}
@@ -194,34 +201,40 @@ def _compute_partitions(
 
     edges_per_module = num_links.sum(axis=1)
     total_edges = num_links.sum()
-    if total_edges <= 0:
-        return np.zeros_like(membership)
 
-    theta_row = (edges_per_module / total_edges).reshape(-1, 1)
-    theta_col = (edges_per_module / total_edges).reshape(1, -1)
-    theta = theta_row @ theta_col
-    var_null = theta * (1.0 - theta) / total_edges
+    # When clusters share no inter-cluster edges (total_edges == 0), the
+    # theta / num_links / sig_links divisions produce NaN. We let them flow
+    # through; the downstream NaN→0 sanitisation collapses sig_links to the
+    # zero matrix and the connected-component split then returns one
+    # partition per cluster — matching R's behaviour in the same regime.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        theta_row = (edges_per_module / total_edges).reshape(-1, 1)
+        theta_col = (edges_per_module / total_edges).reshape(1, -1)
+        theta = theta_row @ theta_col
+        var_null = theta * (1.0 - theta) / total_edges
 
-    num_links_ij = num_links / total_edges - theta
-    cluster_mat = pnorm_over_mat(num_links_ij, var_null)
-
-    sig_links = num_links / total_edges
-    # NaN sanitisation.
+        num_links_ij = num_links / total_edges - theta
+        cluster_mat = pnorm_over_mat(num_links_ij, var_null)
+        sig_links = num_links / total_edges
+    # NaN → 0 for both the link-magnitude matrix and the p-value matrix
+    # (matches `compute_partitions` in cluster_cells.R: lines 628-629).
     sig_links = np.where(np.isnan(sig_links), 0.0, sig_links)
-    cluster_mat = np.where(np.isnan(cluster_mat), 1.0, cluster_mat)
+    cluster_mat = np.where(np.isnan(cluster_mat), 0.0, cluster_mat)
 
-    # BH adjust over the full matrix (matches R p.adjust default).
-    flat_q = false_discovery_control(cluster_mat.ravel(), method="bh")
+    # Holm step-down correction — R `stats::p.adjust()` defaults to "holm".
+    flat_q = multipletests(cluster_mat.ravel(), method="holm")[1]
     cluster_qmat = flat_q.reshape(cluster_mat.shape)
 
     sig_links[cluster_qmat > qval_thresh] = 0.0
     np.fill_diagonal(sig_links, 0.0)
 
+    # Preserve weights on the partition graph (R passes `weighted = TRUE` to
+    # `graph_from_adjacency_matrix`).
     cluster_g = ig.Graph.Weighted_Adjacency(
-        (sig_links > 0).astype(float).tolist(), mode="undirected"
+        sig_links.tolist(), mode="undirected"
     )
     comp = cluster_g.connected_components().membership
-    comp = np.asarray(comp, dtype=np.int64)
+    comp = np.asarray(comp, dtype=np.int64) + 1  # 1-indexed for R parity
 
     cell_partition = comp[cols]
     return cell_partition.astype(np.int64)
@@ -299,7 +312,7 @@ def cluster_cells(
     )
 
     if cluster_method == "leiden":
-        membership = _run_leiden(
+        membership, modularity = _run_leiden(
             g,
             resolution=resolution,
             num_iter=int(num_iter),
@@ -308,23 +321,26 @@ def cluster_cells(
         )
     else:
         weights = np.asarray(g.es["weight"], dtype=float) if weight else None
-        membership = _run_louvain(
+        membership, modularity = _run_louvain(
             g, weights=weights, louvain_iter=int(num_iter), random_seed=random_seed
         )
 
+    # R's factor-level indexing is 1-based; align uns storage + obs labels.
+    membership = np.asarray(membership, dtype=np.int64) + 1
+
     cluster_series = pd.Categorical(
-        [str(m + 1) for m in membership],
-        categories=[str(x) for x in sorted(set(membership + 1))],
+        [str(m) for m in membership],
+        categories=[str(x) for x in sorted(set(int(v) for v in membership))],
     )
 
     if len(set(membership)) > 1:
         partition_arr = _compute_partitions(g, membership, qval_thresh=float(partition_qval))
     else:
-        partition_arr = np.zeros_like(membership)
+        partition_arr = np.ones_like(membership, dtype=np.int64)
 
     partition_series = pd.Categorical(
-        [str(p + 1) for p in partition_arr],
-        categories=[str(x) for x in sorted(set(partition_arr + 1))],
+        [str(p) for p in partition_arr],
+        categories=[str(x) for x in sorted(set(int(v) for v in partition_arr))],
     )
 
     adata.obs[_CLUSTER_COL] = pd.Series(cluster_series, index=adata.obs_names)
@@ -338,8 +354,9 @@ def cluster_cells(
         "partition_qval": float(partition_qval),
         "weight": bool(weight),
         "resolution": None if resolution is None else float(resolution),
-        "membership": np.asarray(membership).astype(np.int64),
+        "membership": membership.astype(np.int64),
         "partitions": partition_arr.astype(np.int64),
+        "modularity": float(modularity),
     }
     return adata
 
@@ -360,8 +377,8 @@ def _clusters_from_uns(
             f"Run cluster_cells(reduction_method={reduction_method!r}) first."
         )
     arr = np.asarray(slot[kind])
-    labels = [str(x + 1) for x in arr]
-    cats = [str(x) for x in sorted({int(v) + 1 for v in arr})]
+    labels = [str(x) for x in arr]
+    cats = [str(x) for x in sorted({int(v) for v in arr})]
     return pd.Series(
         pd.Categorical(labels, categories=cats),
         index=adata.obs_names,

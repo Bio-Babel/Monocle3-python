@@ -48,7 +48,7 @@ def test_coefficient_table_has_q_value(prepared):
     coefs = coefficient_table(tbl)
     assert "term" in coefs.columns
     assert "q_value" in coefs.columns
-    assert set(coefs["term"].unique()) >= {"Intercept", "time"}
+    assert set(coefs["term"].unique()) >= {"(Intercept)", "time"}
 
 
 def test_evaluate_and_compare(prepared):

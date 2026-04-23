@@ -36,7 +36,8 @@ _DEFAULT_NN_CONTROL: dict[str, Any] = {
     "ef": 150,
     "cores": 1,
     "grain_size": 1,
-    "annoy_random_seed": 2016,
+    # Match R ``set_nn_control(annoy_random_seed = 42)``.
+    "annoy_random_seed": 42,
     # pynndescent query-time tuning — analogous to Annoy's ``search_k``.
     "epsilon": 0.1,
     # pynndescent build-time neighbour-graph size.
