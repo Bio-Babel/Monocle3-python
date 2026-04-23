@@ -39,22 +39,17 @@ def _residual_subtract(
     """Fit a linear model to *coords* using *formula*, then subtract all
     non-intercept effects.
 
-    Equivalent to R's ``limma::lmFit(t(coords), sparse.model.matrix(...))``
-    followed by ``coords - beta @ X_noint``. Returns the cleaned coords
-    and the fitted beta coefficients (non-intercept columns × PCs).
+    Returns the cleaned coords and the fitted beta coefficients
+    (non-intercept columns × PCs).
     """
-    # patsy parses R-style formulas; drop response since we pass coords directly.
     model_df, formula = _sanitize_columns(model_df, formula)
     design = patsy.dmatrix(
         formula, data=model_df, return_type="dataframe", NA_action="raise"
     )
     X = design.to_numpy(dtype=float)
-    # OLS closed-form per PC: beta = (X'X)^-1 X' Y. With numpy's lstsq for
-    # rank-deficient robustness.
+    # lstsq handles rank-deficient design matrices gracefully.
     beta, *_ = np.linalg.lstsq(X, coords, rcond=None)
 
-    # Intercept column is the first column patsy produces for "~ ... " formulas
-    # (or "(Intercept)"). Subtract all *non-intercept* effects.
     col_names = design.design_info.column_names
     keep_mask = np.array(
         [name != "Intercept" and name != "(Intercept)" for name in col_names]
@@ -74,13 +69,15 @@ def align_cds(
     verbose: bool = False,
     build_nn_index: bool = False,
     nn_control: dict | None = None,
+    scanorama_sigma: float = 15.0,
+    scanorama_alpha: float = 0.10,
+    scanorama_approx: bool = False,
     **kwargs: Any,
 ) -> ad.AnnData:
     """Align ``adata.obsm[preprocess_method]`` to remove batch / covariates.
 
-    Mirrors R ``align_cds``. Writes aligned coordinates to
-    ``adata.obsm["X_aligned"]`` and a summary of the fit to
-    ``adata.uns["monocle3"]["Aligned"]``.
+    Writes aligned coordinates to ``adata.obsm["X_aligned"]`` and a
+    summary of the fit to ``adata.uns["monocle3"]["Aligned"]``.
 
     Parameters
     ----------
@@ -103,6 +100,16 @@ def align_cds(
     nn_control : dict, optional
         Passed through to ``make_nn_index`` when ``build_nn_index`` is
         set.
+    scanorama_sigma : float, default 15.0
+        Scanorama Gaussian-kernel bandwidth for the MNN correction.
+        No batchelor analogue; we expose scanorama's default.
+    scanorama_alpha : float, default 0.10
+        Scanorama alignment-strength scalar for the MNN correction.
+        No batchelor analogue; we expose scanorama's default.
+    scanorama_approx : bool, default False
+        When ``False``, use exact nearest-neighbour search (closer to
+        batchelor's behaviour at a speed cost). When ``True``, use
+        scanorama's annoy-backed approximate search.
     **kwargs
         Unused (kept for R-signature parity).
     """
@@ -132,7 +139,14 @@ def align_cds(
                 f"alignment_group '{alignment_group}' not found in adata.obs"
             )
         batch = adata.obs[alignment_group].astype(str).to_numpy()
-        coords = _scanorama_correct(coords, batch, k=int(alignment_k))
+        coords = _scanorama_correct(
+            coords,
+            batch,
+            k=int(alignment_k),
+            sigma=float(scanorama_sigma),
+            alpha=float(scanorama_alpha),
+            approx=bool(scanorama_approx),
+        )
 
     adata.obsm["X_aligned"] = coords.astype(np.float64)
 
@@ -157,11 +171,24 @@ def _scanorama_correct(
     coords: np.ndarray,
     batch: np.ndarray,
     k: int,
+    sigma: float = 15.0,
+    alpha: float = 0.10,
+    approx: bool = False,
 ) -> np.ndarray:
-    """Batchelor-style MNN correction via scanorama.
+    """MNN correction via scanorama.
 
-    scanorama.correct operates on per-batch expression matrices. We feed
-    it the coords directly (each row is a cell, each column a PC).
+    scanorama.correct operates on per-batch expression matrices; we feed
+    the PC coords directly (each row a cell, each column a PC).
+
+    ``sigma`` / ``alpha`` are scanorama-specific and exposed unchanged.
+    ``approx=False`` flips scanorama from annoy to exact kNN so the
+    MNN-pair computation has no index-approximation noise.
+
+    Scanorama always internally L2-normalises its input rows ("cos.norm"),
+    with no toggle to disable it, so the magnitude of corrections will
+    differ from a batchelor::reducedMNN run on the same data; the
+    direction of correction (which cells move towards which batch) is
+    preserved.
     """
     import scanorama
 
@@ -179,7 +206,13 @@ def _scanorama_correct(
         gene_lists.append([f"pc_{i}" for i in range(coords.shape[1])])
 
     corrected, _ = scanorama.correct(
-        datasets, gene_lists, knn=max(int(k), 5), return_dimred=False
+        datasets,
+        gene_lists,
+        knn=int(k),
+        sigma=float(sigma),
+        alpha=float(alpha),
+        approx=bool(approx),
+        return_dimred=False,
     )
     out = np.empty_like(coords, dtype=np.float64)
     for cidx, idx in zip(corrected, order):

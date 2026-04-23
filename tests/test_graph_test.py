@@ -50,3 +50,22 @@ def test_aggregate_gene_expression_shapes(prepared):
     agg = aggregate_gene_expression(prepared, gene_group_df, cell_group_df)
     assert agg.shape[0] == gene_modules["module"].nunique()
     assert agg.shape[1] == prepared.obs["cluster_truth"].nunique()
+
+
+def test_find_gene_modules_umap_nn_method_validation(prepared):
+    """R's ``umap.nn_method`` accepts a fixed set of backends
+    (``cluster_genes.R:108``). Unknown values must raise rather than silently
+    fall through."""
+    with pytest.raises(ValueError, match="umap_nn_method"):
+        find_gene_modules(prepared, k=10, resolution=1e-2, umap_nn_method="bogus")
+
+
+def test_find_gene_modules_umap_nn_method_fnn(prepared):
+    """``umap_nn_method='fnn'`` must return a valid module table — umap-learn
+    receives an sklearn-precomputed kNN graph through its ``precomputed_knn``
+    slot."""
+    modules = find_gene_modules(
+        prepared, k=10, resolution=1e-2, umap_nn_method="fnn",
+    )
+    assert {"id", "module", "dim_1", "dim_2"}.issubset(modules.columns)
+    assert modules.shape[0] <= prepared.n_vars

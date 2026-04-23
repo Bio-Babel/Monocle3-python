@@ -42,6 +42,59 @@ def _gene_loadings(adata: ad.AnnData, preprocess_method: str) -> pd.DataFrame:
     return df
 
 
+def _precomputed_knn_for_umap(
+    X: np.ndarray,
+    n_neighbors: int,
+    metric: str,
+    nn_method: str,
+    random_seed: int | None,
+    cores: int,
+) -> tuple[np.ndarray, np.ndarray, None] | None:
+    """Build ``(knn_indices, knn_dists, None)`` for umap-learn's
+    ``precomputed_knn`` slot when the caller asked for an NN backend other
+    than pynndescent (umap-learn's built-in).
+
+    - ``"annoy"`` / ``"nndescent"``  → ``None`` (let umap-learn use pynndescent).
+    - ``"fnn"``                        → exact brute-force via sklearn.
+    - ``"hnsw"``                       → hnswlib.
+    """
+    if nn_method in ("annoy", "nndescent"):
+        return None
+    if nn_method == "fnn":
+        from sklearn.neighbors import NearestNeighbors
+
+        nn = NearestNeighbors(
+            n_neighbors=n_neighbors, algorithm="brute", metric=metric,
+            n_jobs=int(cores),
+        ).fit(X)
+        dist, idx = nn.kneighbors(X, n_neighbors=n_neighbors)
+        return idx.astype(np.int64), dist.astype(np.float64), None
+    if nn_method == "hnsw":
+        import hnswlib
+
+        space = {"euclidean": "l2", "cosine": "cosine"}.get(metric)
+        if space is None:
+            raise ValueError(
+                f"find_gene_modules: umap_nn_method='hnsw' only supports "
+                f"metric in {{'euclidean', 'cosine'}}, got {metric!r}."
+            )
+        idx_obj = hnswlib.Index(space=space, dim=X.shape[1])
+        idx_obj.init_index(
+            max_elements=X.shape[0], ef_construction=200, M=48,
+        )
+        idx_obj.set_num_threads(int(cores))
+        idx_obj.add_items(X, np.arange(X.shape[0]))
+        idx_obj.set_ef(max(n_neighbors, 150))
+        labels, dists = idx_obj.knn_query(X, k=n_neighbors)
+        if space == "l2":
+            dists = np.sqrt(dists)
+        return labels.astype(np.int64), dists.astype(np.float64), None
+    raise ValueError(
+        f"umap_nn_method must be one of {{'annoy', 'nndescent', 'fnn', 'hnsw'}}, "
+        f"got {nn_method!r}."
+    )
+
+
 def find_gene_modules(
     adata: ad.AnnData,
     reduction_method: str = "UMAP",
@@ -50,6 +103,7 @@ def find_gene_modules(
     umap_min_dist: float = 0.1,
     umap_n_neighbors: int = 15,
     umap_fast_sgd: bool = False,
+    umap_nn_method: str = "annoy",
     k: int = 20,
     leiden_iter: int = 1,
     partition_qval: float = 0.05,
@@ -64,8 +118,11 @@ def find_gene_modules(
 ) -> pd.DataFrame:
     """UMAP-on-gene-loadings then Leiden to produce gene modules.
 
-    Returns a ``pandas.DataFrame`` with columns ``id``, ``module``,
-    ``supermodule``, ``dim_1``, ``dim_2`` (the UMAP coords, as in R).
+    ``umap_nn_method`` mirrors R's ``umap.nn_method`` (default ``"annoy"``
+    per ``cluster_genes.R:108``). umap-learn's built-in pynndescent covers
+    ``"annoy"`` and ``"nndescent"`` natively; ``"fnn"`` and ``"hnsw"`` are
+    realised by pre-computing the kNN graph and handing it to umap-learn
+    through its ``precomputed_knn`` slot.
     """
     del verbose, kwargs
     if reduction_method != "UMAP":
@@ -84,7 +141,16 @@ def find_gene_modules(
     if random_seed != 0:
         np.random.seed(int(random_seed))
     n_neighbors = min(int(umap_n_neighbors), max(2, loadings.shape[0] - 1))
-    u = umap_module.UMAP(
+    loading_arr = loadings.to_numpy()
+    precomputed = _precomputed_knn_for_umap(
+        loading_arr,
+        n_neighbors=n_neighbors,
+        metric=str(umap_metric),
+        nn_method=str(umap_nn_method),
+        random_seed=random_seed if random_seed > 0 else None,
+        cores=int(cores),
+    )
+    umap_kwargs = dict(
         n_components=int(max_components),
         n_neighbors=n_neighbors,
         min_dist=float(umap_min_dist),
@@ -92,7 +158,10 @@ def find_gene_modules(
         random_state=random_seed if random_seed > 0 else None,
         n_jobs=int(cores),
     )
-    embedding = u.fit_transform(loadings.to_numpy())
+    if precomputed is not None:
+        umap_kwargs["precomputed_knn"] = precomputed
+    u = umap_module.UMAP(**umap_kwargs)
+    embedding = u.fit_transform(loading_arr)
     del cores
 
     # Leiden on a kNN graph built from the gene UMAP.

@@ -37,6 +37,22 @@ _DEFAULT_NN_CONTROL: dict[str, Any] = {
     "cores": 1,
     "grain_size": 1,
     "annoy_random_seed": 2016,
+    # pynndescent query-time tuning — analogous to Annoy's ``search_k``.
+    "epsilon": 0.1,
+    # pynndescent build-time neighbour-graph size.
+    "n_neighbors": 30,
+}
+
+# R RcppAnnoy supports these metrics (see nearest_neighbors.R:new_annoy_index).
+# pynndescent supports a superset, but we restrict to R's offering so typos
+# surface as errors rather than silent fallbacks.
+_ANNOY_METRICS = {"euclidean", "cosine", "manhattan", "hamming", "dot"}
+# R RcppHNSW supports these metrics.
+_HNSW_METRIC_MAP = {
+    "euclidean": "l2",
+    "l2": "l2",
+    "cosine": "cosine",
+    "ip": "ip",
 }
 
 
@@ -59,29 +75,32 @@ def make_nn_index(
     subject_matrix : array-like
         ``(n_items, n_features)`` dense matrix.
     nn_control : dict, optional
-        Merged with the monocle3 defaults. Required keys if supplied:
-        ``method`` (``"annoy"``, ``"hnsw"``, ``"nn2"``), ``metric``
-        (``"euclidean"`` / ``"cosine"`` / ``"manhattan"``).
+        Merged with the monocle3 defaults. Supported keys:
+
+        - ``method``: ``"annoy"`` or ``"hnsw"`` (``"nn2"`` is not a valid
+          index method, matching R ``nearest_neighbors.R:636``).
+        - ``metric``: for ``annoy`` one of ``{"euclidean", "cosine",
+          "manhattan", "hamming", "dot"}``; for ``hnsw`` one of
+          ``{"euclidean"/"l2", "cosine", "ip"}``. Unknown metric raises.
+        - ``n_trees``: Annoy tree count (passes through to
+          ``pynndescent.NNDescent(n_trees=...)``).
+        - ``n_neighbors``: pynndescent build-time graph size (default 30).
+        - ``annoy_random_seed``: seed.
+        - ``cores``: build-time parallelism (``n_jobs`` for pynndescent,
+          ``num_threads`` for hnswlib).
+        - ``M``, ``ef_construction``, ``ef``: hnsw parameters.
     verbose : bool, default False
         Currently unused (kept for R signature parity).
-
-    Returns
-    -------
-    dict
-        ``{'method', 'metric', 'index', 'nrow', 'ncol'}``. Callers should
-        not introspect the ``index`` object — pass it back to
-        ``search_nn_index``.
     """
     del verbose
     nn_control = _resolve_nn_control(nn_control)
     method = nn_control["method"]
+    metric = nn_control["metric"]
 
     X = np.asarray(subject_matrix, dtype=np.float64)
     if X.ndim != 2:
         raise ValueError("subject_matrix must be 2D")
-
     n_items, n_features = X.shape
-    metric = nn_control["metric"]
 
     if method == "nn2":
         raise ValueError(
@@ -90,14 +109,20 @@ def make_nn_index(
         )
 
     if method == "annoy":
-        # pynndescent is the closest Python equivalent of RcppAnnoy for
-        # our purposes — both are approximate, tree-based, and fast.
+        if metric not in _ANNOY_METRICS:
+            raise ValueError(
+                f"make_nn_index: metric {metric!r} not supported for 'annoy'. "
+                f"R RcppAnnoy accepts: {sorted(_ANNOY_METRICS)}."
+            )
         import pynndescent
 
         index = pynndescent.NNDescent(
             X,
             metric=metric,
-            n_neighbors=min(max(nn_control.get("n_trees", 50), 5), n_items),
+            n_neighbors=min(
+                max(int(nn_control.get("n_neighbors", 30)), 2), n_items - 1
+            ) if n_items > 1 else 1,
+            n_trees=int(nn_control.get("n_trees", 50)),
             random_state=int(nn_control.get("annoy_random_seed", 2016)),
             n_jobs=int(nn_control.get("cores", 1)),
         )
@@ -112,17 +137,20 @@ def make_nn_index(
         }
 
     if method == "hnsw":
+        if metric not in _HNSW_METRIC_MAP:
+            raise ValueError(
+                f"make_nn_index: metric {metric!r} not supported for 'hnsw'. "
+                f"R RcppHNSW accepts: {sorted(_HNSW_METRIC_MAP)}."
+            )
         import hnswlib
 
-        space = {"euclidean": "l2", "cosine": "cosine", "ip": "ip"}.get(
-            metric, "l2"
-        )
-        idx = hnswlib.Index(space=space, dim=n_features)
+        idx = hnswlib.Index(space=_HNSW_METRIC_MAP[metric], dim=n_features)
         idx.init_index(
             max_elements=n_items,
             ef_construction=int(nn_control.get("ef_construction", 200)),
             M=int(nn_control.get("M", 48)),
         )
+        idx.set_num_threads(int(nn_control.get("cores", 1)))
         idx.add_items(X, np.arange(n_items))
         idx.set_ef(int(nn_control.get("ef", 150)))
         return {
@@ -139,6 +167,28 @@ def make_nn_index(
     )
 
 
+def _search_k_to_epsilon(search_k: int | None, k: int, n_trees: int) -> float:
+    """Best-effort heuristic mapping R's Annoy ``search_k`` to pynndescent's
+    ``epsilon``. Annoy's convention: the default ``search_k = k * n_trees``
+    gives baseline recall; larger ``search_k`` → more candidates inspected
+    → better recall. pynndescent's ``epsilon`` expands the candidate set by
+    ``1 + epsilon`` fold; ``epsilon = 0`` is pure greedy, ``0.1`` is the
+    default.
+
+    We map ``ratio = search_k / (k * n_trees)``:
+
+    - ``ratio ≤ 1``  → ``epsilon = 0.0`` (no overfetch)
+    - ``ratio >= 10`` → ``epsilon = 1.0`` (double the candidate set)
+    - otherwise linear between the two endpoints.
+    """
+    if search_k is None:
+        return 0.1  # pynndescent default
+    baseline = max(int(k) * max(int(n_trees), 1), 1)
+    ratio = float(search_k) / baseline
+    ratio = min(max(ratio, 1.0), 10.0)
+    return (ratio - 1.0) / 9.0  # [1, 10] → [0, 1]
+
+
 def search_nn_index(
     query_matrix: Any,
     nn_index: dict,
@@ -148,11 +198,14 @@ def search_nn_index(
 ) -> dict:
     """Query an index built by :func:`make_nn_index`.
 
-    Returns
-    -------
-    dict
-        ``{'nn.idx': (n_query, k) int64 1-based indices,
-           'nn.dists': (n_query, k) float64 distances}``.
+    Honours ``nn_control``:
+
+    - ``search_k`` (annoy): R's tree-search budget → mapped to pynndescent's
+      ``epsilon`` via :func:`_search_k_to_epsilon`.
+    - ``epsilon`` (annoy): pynndescent-native override that wins if both are
+      given.
+    - ``cores`` (hnsw): ``num_threads`` for ``hnswlib.Index.knn_query``.
+    - ``ef`` (hnsw): search-time accuracy; must be >= ``k``.
     """
     del verbose
     nn_control = _resolve_nn_control(nn_control)
@@ -165,16 +218,31 @@ def search_nn_index(
 
     if method == "annoy":
         idx_index = nn_index["index"]
-        neighbor_idx, neighbor_dist = idx_index.query(Q, k=k)
+        if "epsilon" in (nn_control or {}) and nn_control["epsilon"] != _DEFAULT_NN_CONTROL["epsilon"]:
+            epsilon = float(nn_control["epsilon"])
+        else:
+            epsilon = _search_k_to_epsilon(
+                nn_control.get("search_k"), k=k,
+                n_trees=int(nn_control.get("n_trees", 50)),
+            )
+        neighbor_idx, neighbor_dist = idx_index.query(Q, k=k, epsilon=epsilon)
         return {
             "nn.idx": (neighbor_idx + 1).astype(np.int64),
             "nn.dists": neighbor_dist.astype(np.float64),
         }
     if method == "hnsw":
         idx_index = nn_index["index"]
-        labels, dists = idx_index.knn_query(Q, k=k)
+        ef = int(nn_control.get("ef", 150))
+        if ef < k:
+            raise ValueError(
+                f"search_nn_index: ef ({ef}) must be >= k ({k})"
+            )
+        idx_index.set_ef(ef)
+        cores = int(nn_control.get("cores", 1))
+        num_threads = cores if cores >= 1 else -1
+        labels, dists = idx_index.knn_query(Q, k=k, num_threads=num_threads)
         # hnswlib returns squared L2 for "l2"; take sqrt for Euclidean parity.
-        if nn_index["metric"] == "euclidean":
+        if nn_index["metric"] in ("euclidean", "l2"):
             dists = np.sqrt(dists)
         return {
             "nn.idx": (labels + 1).astype(np.int64),
