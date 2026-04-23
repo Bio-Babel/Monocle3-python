@@ -9,13 +9,7 @@ from __future__ import annotations
 
 __version__ = "1.4.26+4f4239a"
 
-from ._accessors import (
-    counts_row_order,
-    saveRDS,
-    set_cds_row_order_matrix,
-    set_matrix_control,
-    size_factors,
-)
+from ._accessors import size_factors
 from .alignment import align_cds
 from .cluster_cells import cluster_cells, clusters, partitions
 from .cluster_genes import aggregate_gene_expression, find_gene_modules
@@ -63,7 +57,6 @@ __all__ = [
     "clusters",
     "coefficient_table",
     "compare_models",
-    "counts_row_order",
     "detect_genes",
     "estimate_size_factors",
     "evaluate_fits",
@@ -91,12 +84,9 @@ __all__ = [
     "principal_graph",
     "pseudotime",
     "reduce_dimension",
-    "saveRDS",
     "search_nn_index",
     "search_nn_matrix",
     "set_cds_nn_index",
-    "set_cds_row_order_matrix",
-    "set_matrix_control",
     "size_factors",
     "top_markers",
 ]

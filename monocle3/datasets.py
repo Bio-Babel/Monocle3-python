@@ -9,9 +9,9 @@ The originals (``load_worm_embryo``, ``load_worm_l2``, ``load_a549``,
 - ``cao_l2.h5ad`` — the Cao et al. 2017 *C. elegans* L2 dataset used by
   ``c_elegans_L2_v2.ipynb``.
 
-Both are resolved through the three-tier ``_download.resolve_data_path``
-loader: cwd-local staging → ``~/.cache/monocle3-python/`` → registry
-download.
+Both are resolved through :func:`_download.resolve_data_path`: the asset
+is served from ``~/.cache/monocle3-python/<filename>`` when present, or
+downloaded on first use from the registry URL and saved to that cache.
 """
 
 from __future__ import annotations

@@ -7,7 +7,6 @@ After publishing to **production** Zenodo, replace sandbox URLs with
 production URLs and update the record ID.
 """
 
-DATA_DIR_NAME = "monocle3_data"
 CACHE_DIR_NAME = "monocle3-python"
 
 REGISTRY: dict[str, dict[str, str]] = {

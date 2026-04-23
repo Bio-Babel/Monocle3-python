@@ -97,7 +97,7 @@ def _test_marker(
             counts = np.asarray(counts.todense()).ravel()
         else:
             counts = np.asarray(counts, dtype=float).ravel()
-        sf = size_factors(adata)
+        sf = size_factors(adata).to_numpy()
         expression = np.log(counts / sf + 0.1)
         membership = (cell_group_series.astype(str) == str(cell_group)).to_numpy()
 

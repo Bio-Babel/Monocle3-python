@@ -5,12 +5,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from ._registry import CACHE_DIR_NAME, DATA_DIR_NAME, REGISTRY
+from ._registry import CACHE_DIR_NAME, REGISTRY
 
 __all__ = ["resolve_data_path"]
-
-# <pkg>-python/<import_name>/_download.py  →  parent.parent = <pkg>-python/
-_PKG_ROOT = Path(__file__).resolve().parent.parent
 
 
 def resolve_data_path(filename: str) -> Path:
@@ -18,9 +15,8 @@ def resolve_data_path(filename: str) -> Path:
 
     Resolution order:
 
-    1. ``<work_dir>/<DATA_DIR_NAME>/<filename>``  — local staging copy
-    2. ``~/.cache/<CACHE_DIR_NAME>/<filename>``  — previously downloaded
-    3. Download from registry URL → save to cache
+    1. ``~/.cache/<CACHE_DIR_NAME>/<filename>``  — previously downloaded
+    2. Download from registry URL → save to cache
 
     Parameters
     ----------
@@ -35,32 +31,24 @@ def resolve_data_path(filename: str) -> Path:
     Raises
     ------
     FileNotFoundError
-        If the file cannot be resolved from any source.
+        If the file is not cached and not in the registry (or the
+        registry entry has no URL).
     """
-    # 1. local staging dir (sibling of <pkg>-python/)
-    local = _PKG_ROOT.parent / DATA_DIR_NAME / filename
-    if local.exists():
-        return local
-
-    # 2. cache
     cache_dir = Path.home() / ".cache" / CACHE_DIR_NAME
     cached = cache_dir / filename
     if cached.exists():
         return cached
 
-    # 3. download
     if filename not in REGISTRY:
         raise FileNotFoundError(
-            f"\'{filename}\' not found locally and not in registry.\n"
-            f"Place it in: {local}"
+            f"'{filename}' is not in the REGISTRY and not cached at {cached}."
         )
 
     entry = REGISTRY[filename]
     url = entry.get("url")
     if not url:
         raise FileNotFoundError(
-            f"\'{filename}\' has no download URL in registry.\n"
-            f"Place it manually in: {local}"
+            f"'{filename}' has no download URL in the REGISTRY."
         )
 
     cache_dir.mkdir(parents=True, exist_ok=True)

@@ -525,6 +525,10 @@ def preprocess_cds(
     if adata.obs["Size_Factor"].isna().any():
         raise ValueError("One or more cells has a size factor of NA.")
 
+    # `scipy.sparse.linalg.svds` uses a randomised Arnoldi start vector;
+    # seeding numpy's global RNG makes the SVD reproducible across runs.
+    np.random.seed(2016)
+
     # Log-norm or size-only.
     if pseudo_count is None:
         pseudo_count = 1.0 if norm_method == "log" else 0.0

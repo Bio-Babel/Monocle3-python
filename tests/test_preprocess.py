@@ -82,10 +82,22 @@ def test_preprocess_cds_requires_size_factor():
 
 
 def test_size_factors_accessor(synthetic_adata):
+    import pandas as pd
+
     estimate_size_factors(synthetic_adata)
     sf = size_factors(synthetic_adata)
+    # R's ``size_factors`` returns a named numeric vector
+    # (``methods-cell_data_set.R:36-40``); Python returns a pandas Series
+    # indexed by cell name so R's ``sf["AAACGG..."]`` idiom still works.
+    assert isinstance(sf, pd.Series)
     assert sf.shape == (synthetic_adata.n_obs,)
+    assert list(sf.index) == list(synthetic_adata.obs_names)
     assert (sf > 0).all()
+    # Named lookup must resolve.
+    first_cell = synthetic_adata.obs_names[0]
+    assert float(sf.loc[first_cell]) == float(
+        synthetic_adata.obs.loc[first_cell, "Size_Factor"]
+    )
 
 
 def test_preprocess_cds_lsi_shape(synthetic_adata):

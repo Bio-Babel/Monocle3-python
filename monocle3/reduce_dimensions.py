@@ -1,12 +1,11 @@
-"""reduce_dimension — port of R/reduce_dimensions.R.
+"""Low-dimensional projection of cells.
 
-UMAP delegated to umap-learn (the library that ``uwot`` is itself a port
-of); t-SNE delegated to openTSNE; PCA/LSI/Aligned are passthroughs that
-just expose the upstream coords under a new ``obsm`` key.
+UMAP delegated to umap-learn, t-SNE to openTSNE; PCA / LSI / Aligned are
+passthroughs that expose existing ``obsm`` coords under a new key.
 
-On successful reduction the function also clears stale principal-graph
-slots for the same reduction so downstream learn_graph / order_cells
-does not read stale coordinates.
+On successful reduction the function clears stale principal-graph slots
+for the same reduction so downstream learn_graph / order_cells do not
+see stale coordinates.
 """
 
 from __future__ import annotations
@@ -30,8 +29,6 @@ def reduce_dimension(
     umap_metric: str = "cosine",
     umap_min_dist: float = 0.1,
     umap_n_neighbors: int = 15,
-    umap_fast_sgd: bool = False,
-    umap_nn_method: str = "annoy",
     verbose: bool = False,
     cores: int = 1,
     build_nn_index: bool = False,
@@ -51,9 +48,11 @@ def reduce_dimension(
         they simply expose an existing ``obsm`` matrix under a new key.
     preprocess_method : {"PCA", "LSI", "Aligned", None}, optional
         Source coordinates for UMAP / t-SNE. If ``None``, prefer
-        ``Aligned`` if present, otherwise ``PCA``. Mirrors R message.
-    umap_metric, umap_min_dist, umap_n_neighbors, umap_fast_sgd, umap_nn_method
-        Mapped to ``umap.UMAP`` arguments.
+        ``Aligned`` if present, otherwise ``PCA``.
+    umap_metric, umap_min_dist, umap_n_neighbors
+        Mapped to ``umap.UMAP`` arguments. ``umap.fast_sgd`` and
+        ``umap.nn_method`` are ``uwot``-specific extensions that
+        ``umap-learn`` does not expose, so they are not available here.
     verbose : bool, default False
         Forwarded to ``umap.UMAP`` / ``openTSNE``.
     cores : int, default 1
@@ -130,11 +129,21 @@ def reduce_dimension(
     elif reduction_method == "tSNE":
         import openTSNE
 
-        n = preprocess_mat.shape[0]
-        perp = kwargs.pop("perplexity", 30)
+        # Pass perplexity through unchanged. openTSNE will raise on invalid
+        # values; we emit a pre-emptive warning so the cause is obvious.
+        n_samples = preprocess_mat.shape[0]
+        perp = float(kwargs.pop("perplexity", 30))
+        max_perp = max(5, (n_samples - 1) // 3)
+        if perp > max_perp:
+            warnings.warn(
+                f"perplexity={perp} exceeds openTSNE's sanity bound "
+                f"(n_samples-1)/3 = {max_perp}; openTSNE will raise. "
+                "Reduce perplexity or provide more cells.",
+                stacklevel=2,
+            )
         tsne = openTSNE.TSNE(
             n_components=int(max_components),
-            perplexity=min(perp, max(5, (n - 1) // 3)),
+            perplexity=perp,
             random_state=2016,
             n_jobs=int(cores),
             verbose=bool(verbose),
@@ -150,14 +159,14 @@ def reduce_dimension(
     else:  # UMAP
         import umap as umap_module
 
-        if umap_fast_sgd or cores > 1:
+        if cores > 1:
             warnings.warn(
-                "reduce_dimension will produce slightly different output each "
-                "time unless umap_fast_sgd=False and cores=1.",
+                "reduce_dimension may produce slightly different output each "
+                "time unless cores=1 (umap-learn's parallel SGD is non-deterministic).",
                 stacklevel=2,
             )
 
-        n_neighbors = min(int(umap_n_neighbors), max(2, preprocess_mat.shape[0] - 1))
+        n_neighbors = int(umap_n_neighbors)
 
         umap_model = umap_module.UMAP(
             n_components=int(max_components),
@@ -169,16 +178,20 @@ def reduce_dimension(
             verbose=bool(verbose),
             **kwargs,
         )
-        embedding = umap_model.fit_transform(preprocess_mat)
+        # Two-step fit + reseed + transform: `.transform()` produces a
+        # consistent re-embedding when the RNG is reset, whereas the
+        # `.fit_transform()` embedding includes SGD randomness that varies
+        # across calls even with the same `random_state`.
+        umap_model = umap_model.fit(preprocess_mat)
+        np.random.seed(2016)
+        embedding = umap_model.transform(preprocess_mat)
         adata.obsm["X_umap"] = np.asarray(embedding, dtype=np.float64)
         uns["reduce_dim"]["UMAP"] = {
             "preprocess_method": preprocess_method,
             "max_components": int(max_components),
             "umap_metric": umap_metric,
             "umap_min_dist": float(umap_min_dist),
-            "umap_n_neighbors": int(n_neighbors),
-            "umap_fast_sgd": bool(umap_fast_sgd),
-            "nn_method": str(umap_nn_method),
+            "umap_n_neighbors": n_neighbors,
         }
         uns["UMAP_model"] = umap_model
 
