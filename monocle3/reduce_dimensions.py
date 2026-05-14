@@ -23,6 +23,73 @@ from ._utils import ensure_monocle_uns, get_monocle_uns
 __all__ = ["reduce_dimension"]
 
 
+# UMAP-metric → annoy-metric mapping. R uwot uses annoy "angular" for
+# cosine/correlation and the same name otherwise.
+_ANNOY_METRIC_MAP = {
+    "cosine": "angular",
+    "correlation": "angular",
+    "euclidean": "euclidean",
+    "manhattan": "manhattan",
+    "hamming": "hamming",
+}
+
+
+def _build_annoy_precomputed_knn(
+    X: np.ndarray,
+    n_neighbors: int,
+    metric: str,
+    seed: int,
+    n_trees: int = 50,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build a kNN graph with uwot's exact ``nn_method='annoy'`` parameters.
+
+    Uwot defaults (uwot::umap formals): ``n_trees=50`` and
+    ``search_k = 2 * n_neighbors * n_trees``. Cosine becomes annoy
+    'angular', whose distance is ``sqrt(2*(1-cos))``; we square-and-halve
+    so the values match umap-learn's expected ``metric='cosine'``
+    distance (``1 - cos``).
+
+    Returns
+    -------
+    (indices, distances)
+        Both shape ``(N, n_neighbors + 1)`` with self at column 0,
+        suitable for ``umap.UMAP(precomputed_knn=...)``.
+    """
+    from annoy import AnnoyIndex  # lazy: keep annoy optional
+
+    if metric not in _ANNOY_METRIC_MAP:
+        raise ValueError(
+            f"umap_nn_method='annoy' does not support metric={metric!r}; "
+            f"supported: {sorted(_ANNOY_METRIC_MAP)}. "
+            f"Pass umap_nn_method='default' to fall back to umap-learn's kNN."
+        )
+    am = _ANNOY_METRIC_MAP[metric]
+    n, d = X.shape
+
+    idx = AnnoyIndex(d, am)
+    idx.set_seed(int(seed))
+    for i in range(n):
+        idx.add_item(i, X[i].tolist())
+    idx.build(n_trees)
+
+    search_k = 2 * int(n_neighbors) * int(n_trees)
+    k_plus = int(n_neighbors) + 1
+    knn_idx = np.zeros((n, k_plus), dtype=np.int64)
+    knn_dist = np.zeros((n, k_plus), dtype=np.float64)
+    for i in range(n):
+        nn_i, nn_d = idx.get_nns_by_item(
+            i, k_plus, search_k=search_k, include_distances=True,
+        )
+        knn_idx[i] = nn_i
+        knn_dist[i] = nn_d
+
+    if am == "angular":
+        # annoy angular distance = sqrt(2*(1-cos)); umap-learn metric='cosine'
+        # expects (1 - cos).
+        knn_dist = (knn_dist ** 2) / 2.0
+    return knn_idx, knn_dist
+
+
 def reduce_dimension(
     adata: ad.AnnData,
     max_components: int = 2,
@@ -31,6 +98,7 @@ def reduce_dimension(
     umap_metric: str = "cosine",
     umap_min_dist: float = 0.1,
     umap_n_neighbors: int = 15,
+    umap_nn_method: str = "annoy",
     verbose: bool = False,
     cores: int = 1,
     build_nn_index: bool = False,
@@ -52,9 +120,17 @@ def reduce_dimension(
         Source coordinates for UMAP / t-SNE. If ``None``, prefer
         ``Aligned`` if present, otherwise ``PCA``.
     umap_metric, umap_min_dist, umap_n_neighbors
-        Mapped to ``umap.UMAP`` arguments. ``umap.fast_sgd`` and
-        ``umap.nn_method`` are ``uwot``-specific extensions that
-        ``umap-learn`` does not expose, so they are not available here.
+        Mapped to ``umap.UMAP`` arguments. ``umap.fast_sgd`` is a
+        ``uwot``-specific extension that ``umap-learn`` does not expose
+        and is not available here.
+    umap_nn_method : {"annoy", "default"}, default "annoy"
+        kNN backend for UMAP. ``"annoy"`` (the default, matching R uwot's
+        ``nn_method="annoy"``) precomputes the kNN graph with the real
+        ``annoy`` library using uwot's exact parameters
+        (``n_trees=50``, ``search_k = 2 * n_neighbors * n_trees``) and
+        feeds it to umap-learn via ``precomputed_knn``. ``"default"``
+        delegates to umap-learn's internal kNN (pynndescent for n>4096,
+        sklearn balltree otherwise) — historical behaviour.
     verbose : bool, default False
         Forwarded to ``umap.UMAP`` / ``openTSNE``.
     cores : int, default 1
@@ -169,23 +245,34 @@ def reduce_dimension(
 
         n_neighbors = int(umap_n_neighbors)
 
-        umap_model = umap_module.UMAP(
+        umap_kwargs: dict[str, Any] = dict(
             n_components=int(max_components),
             n_neighbors=n_neighbors,
             min_dist=float(umap_min_dist),
             metric=str(umap_metric),
             random_state=2016,
+            transform_seed=2016,
             n_jobs=int(cores),
             verbose=bool(verbose),
-            **kwargs,
         )
-        # Two-step fit + reseed + transform: `.transform()` produces a
-        # consistent re-embedding when the RNG is reset, whereas the
-        # `.fit_transform()` embedding includes SGD randomness that varies
-        # across calls even with the same `random_state`.
-        umap_model = umap_model.fit(preprocess_mat)
-        np.random.seed(2016)
-        embedding = umap_model.transform(preprocess_mat)
+        if umap_nn_method == "annoy":
+            knn_idx, knn_dist = _build_annoy_precomputed_knn(
+                preprocess_mat,
+                n_neighbors=n_neighbors,
+                metric=str(umap_metric),
+                seed=2016,
+            )
+            umap_kwargs["precomputed_knn"] = (knn_idx, knn_dist, None)
+        elif umap_nn_method != "default":
+            raise ValueError(
+                f"umap_nn_method must be 'annoy' or 'default', got {umap_nn_method!r}"
+            )
+        umap_kwargs.update(kwargs)
+
+        umap_model = umap_module.UMAP(**umap_kwargs)
+        # fit_transform is deterministic in umap-learn >= 0.5 with
+        # n_jobs=1 and random_state set; no manual re-seeding needed.
+        embedding = umap_model.fit_transform(preprocess_mat)
         adata.obsm["X_umap"] = np.asarray(embedding, dtype=np.float64)
         uns["reduce_dim"]["UMAP"] = {
             "preprocess_method": preprocess_method,
@@ -193,7 +280,7 @@ def reduce_dimension(
             "umap_metric": umap_metric,
             "umap_min_dist": float(umap_min_dist),
             "umap_n_neighbors": n_neighbors,
-            # Fitted umap.UMAP object, used by reduce_dimension_transform().
+            "umap_nn_method": umap_nn_method,
             "model": umap_model,
         }
 

@@ -7,6 +7,7 @@ The function requires either ``root_cells`` or ``root_pr_nodes``.
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Sequence
 
 import anndata as ad
@@ -147,6 +148,28 @@ def order_cells(
     # keyed by cell, for downstream diagnostic / branching code.
     aux["pseudotime"] = pd.Series(pseudo, index=adata.obs_names)
     ensure_monocle_uns(adata)["principal_graph_aux"][reduction_method] = aux
+
+    # Diagnostic: per-partition principal graphs are disconnected by
+    # construction, so cells outside the root's partition unavoidably
+    # receive Inf pseudotime. Surface this when it dominates the output.
+    n_inf = int(np.isinf(pseudo).sum())
+    if adata.n_obs > 0 and n_inf / adata.n_obs > 0.2:
+        n_parts = 1
+        if "monocle3_partitions" in adata.obs.columns:
+            n_parts = int(adata.obs["monocle3_partitions"].nunique())
+        warnings.warn(
+            f"order_cells: {n_inf}/{adata.n_obs} cells "
+            f"({n_inf / adata.n_obs:.0%}) received Inf pseudotime because "
+            f"they are not reachable from any root_pr_node in "
+            f"pr_graph_cell_proj_tree. The default learn_graph("
+            f"use_partition=True) builds one disconnected sub-graph per "
+            f"partition ({n_parts} partitions detected). To get pseudotime "
+            f"for every cell, either (a) re-run learn_graph(adata, "
+            f"use_partition=False) for a single connected trajectory, or "
+            f"(b) provide root_pr_nodes in every partition.",
+            UserWarning,
+            stacklevel=2,
+        )
     return adata
 
 

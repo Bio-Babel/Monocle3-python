@@ -1,8 +1,8 @@
 """Alignment — port of R/alignment.R::align_cds.
 
 Residual model subtraction → statsmodels OLS per PC.
-Batch alignment → scanorama (Batchelor's MNN replacement, see
-``monocle3_porting_essential_suggestions.md`` §2).
+Batch alignment → :func:`monocle3._batchelor.reduced_mnn`, our pure-Python
+port of ``batchelor::reducedMNN`` restricted to the monocle3 call.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import patsy
-import scanorama
 
+from ._batchelor import reduced_mnn
 from ._utils import ensure_monocle_uns
 
 __all__ = ["align_cds"]
@@ -70,9 +70,6 @@ def align_cds(
     verbose: bool = False,
     build_nn_index: bool = False,
     nn_control: dict | None = None,
-    scanorama_sigma: float = 15.0,
-    scanorama_alpha: float = 0.10,
-    scanorama_approx: bool = False,
     **kwargs: Any,
 ) -> ad.AnnData:
     """Align ``adata.obsm[preprocess_method]`` to remove batch / covariates.
@@ -87,9 +84,13 @@ def align_cds(
         Which reduced matrix to align. Must be present in ``obsm``.
     alignment_group : str, optional
         ``obs`` column with a categorical batch label. If provided,
-        scanorama.correct removes between-batch effects (MNN-style).
+        batch effects are removed by :func:`monocle3._batchelor.reduced_mnn`,
+        a port of ``batchelor::reducedMNN`` matching the monocle3 R
+        caller exactly (k from ``alignment_k``, all other parameters at
+        batchelor defaults: ``ndist=3``, sequential merge order, exact
+        KmknnParam-style kNN).
     alignment_k : int, default 20
-        k for the MNN stage.
+        ``k`` forwarded to ``reduced_mnn``; matches batchelor's default.
     residual_model_formula_str : str, optional
         R-style formula without response, e.g.
         ``"~ bg.300.loading + batch"``. Uses patsy to build the design
@@ -101,16 +102,6 @@ def align_cds(
     nn_control : dict, optional
         Passed through to ``make_nn_index`` when ``build_nn_index`` is
         set.
-    scanorama_sigma : float, default 15.0
-        Scanorama Gaussian-kernel bandwidth for the MNN correction.
-        No batchelor analogue; we expose scanorama's default.
-    scanorama_alpha : float, default 0.10
-        Scanorama alignment-strength scalar for the MNN correction.
-        No batchelor analogue; we expose scanorama's default.
-    scanorama_approx : bool, default False
-        When ``False``, use exact nearest-neighbour search (closer to
-        batchelor's behaviour at a speed cost). When ``True``, use
-        scanorama's annoy-backed approximate search.
     **kwargs
         Unused (kept for R-signature parity).
     """
@@ -140,14 +131,8 @@ def align_cds(
                 f"alignment_group '{alignment_group}' not found in adata.obs"
             )
         batch = adata.obs[alignment_group].astype(str).to_numpy()
-        coords = _scanorama_correct(
-            coords,
-            batch,
-            k=int(alignment_k),
-            sigma=float(scanorama_sigma),
-            alpha=float(scanorama_alpha),
-            approx=bool(scanorama_approx),
-        )
+        result = reduced_mnn(coords, batch, k=int(alignment_k))
+        coords = result["corrected"]
 
     adata.obsm["X_aligned"] = coords.astype(np.float64)
 
@@ -166,54 +151,3 @@ def align_cds(
         set_cds_nn_index(adata, reduction_method="Aligned", nn_index=nn_index)
 
     return adata
-
-
-def _scanorama_correct(
-    coords: np.ndarray,
-    batch: np.ndarray,
-    k: int,
-    sigma: float = 15.0,
-    alpha: float = 0.10,
-    approx: bool = False,
-) -> np.ndarray:
-    """MNN correction via scanorama.
-
-    scanorama.correct operates on per-batch expression matrices; we feed
-    the PC coords directly (each row a cell, each column a PC).
-
-    ``sigma`` / ``alpha`` are scanorama-specific and exposed unchanged.
-    ``approx=False`` flips scanorama from annoy to exact kNN so the
-    MNN-pair computation has no index-approximation noise.
-
-    Scanorama always internally L2-normalises its input rows ("cos.norm"),
-    with no toggle to disable it, so the magnitude of corrections will
-    differ from a batchelor::reducedMNN run on the same data; the
-    direction of correction (which cells move towards which batch) is
-    preserved.
-    """
-    unique_batches = pd.unique(pd.Series(batch))
-    if len(unique_batches) < 2:
-        return coords.astype(np.float64, copy=True)
-
-    order: list[np.ndarray] = []
-    datasets: list[np.ndarray] = []
-    gene_lists: list[list[str]] = []
-    for b in unique_batches:
-        mask = batch == b
-        order.append(np.where(mask)[0])
-        datasets.append(coords[mask].astype(np.float64))
-        gene_lists.append([f"pc_{i}" for i in range(coords.shape[1])])
-
-    corrected, _ = scanorama.correct(
-        datasets,
-        gene_lists,
-        knn=int(k),
-        sigma=float(sigma),
-        alpha=float(alpha),
-        approx=bool(approx),
-        return_dimred=False,
-    )
-    out = np.empty_like(coords, dtype=np.float64)
-    for cidx, idx in zip(corrected, order):
-        out[idx] = np.asarray(cidx.todense() if hasattr(cidx, "todense") else cidx)
-    return out
