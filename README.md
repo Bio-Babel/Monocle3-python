@@ -2,9 +2,9 @@
 
 [![PyPI](https://img.shields.io/pypi/v/monocle3-python)](https://pypi.org/project/monocle3-python/)
 
-Python port of the R [**monocle3**](https://github.com/cole-trapnell-lab/monocle3) single-cell trajectory toolkit. Tracks upstream `1.4.26` at commit `4f4239a`.
+Python port of the R [**monocle3**](https://github.com/cole-trapnell-lab/monocle3) single-cell trajectory toolkit.
 
-The port keeps monocle3's orchestration and R-side numerical behaviour while replacing the `cell_data_set` S4 container with `anndata.AnnData` and delegating non-monocle-specific algorithms to the scverse ecosystem (`umap-learn`, `openTSNE`, `leidenalg`, `statsmodels`, `scanorama`, …).
+The port keeps monocle3's orchestration and R-side numerical behaviour while replacing the `cell_data_set` S4 container with `anndata.AnnData` and delegating non-monocle-specific algorithms to the scverse ecosystem (`umap-learn`, `openTSNE`, `leidenalg`, `statsmodels`, …).
 
 ## Installation
 
@@ -19,8 +19,6 @@ git clone https://github.com/Bio-Babel/Monocle3-python.git
 cd Monocle3-python
 pip install -e ".[dev]"
 ```
-
-No R interpreter is required at runtime. Tutorial datasets are downloaded on first use and cached under `~/.cache/monocle3-python/`.
 
 ## Quickstart
 
