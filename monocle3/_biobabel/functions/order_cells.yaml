@@ -1,0 +1,50 @@
+id: monocle3.order_cells
+import_path: monocle3.order_cells
+execution_class: adata_mutation
+intent:
+  - "pseudotime trajectory"
+  - "compute pseudotime from a principal-graph root"
+description: |
+  Assign pseudotime to each cell as the shortest-path distance from a
+  chosen root in the principal graph (learn_graph output). Either root_pr_nodes
+  (graph vertices) or root_cells (barcodes) must be supplied; if omitted, the
+  user is expected to use an interactive selector (not available here).
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+  - name: root_pr_nodes
+    type: "Sequence[str] | None"
+    required: false
+    default: null
+    description: "Principal-graph node names to root pseudotime from."
+  - name: root_cells
+    type: "Sequence[str] | None"
+    required: false
+    default: null
+    description: "Cell barcodes whose graph projections will be used as roots."
+requires:
+  adata:
+    obsm: [X_umap]
+    uns: ["monocle3.principal_graph", "monocle3.principal_graph_aux"]
+writes:
+  adata:
+    obs: [monocle3_pseudotime]
+    uns: ["monocle3.principal_graph_aux"]
+returns_kind: same_object
+returns_type: AnnData
+next: []
+failure_fixes:
+  - when: "neither root_pr_nodes nor root_cells supplied"
+    suggest:
+      - "Pass root_cells with a list of known biological starting-state cell barcodes"
+      - "Use plot_cells to inspect the principal graph; pick a node name visually"
+  - when: "principal_graph slot missing"
+    suggest: ["monocle3.learn_graph"]
+examples:
+  - "monocle3.order_cells(adata, root_cells=['AAACCTGAGCTAACTC-1'])"
+tested_on: "monocle3-python@1.4.26"

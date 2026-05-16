@@ -1,0 +1,95 @@
+id: monocle3.plot_genes_in_pseudotime
+import_path: monocle3.plot_genes_in_pseudotime
+execution_class: stateless
+intent:
+  - "visualize per-gene expression dynamics along pseudotime"
+  - "scatter + smoothed trend line per gene"
+description: |
+  Port of R ``plot_genes_in_pseudotime``. For each gene in
+  ``adata_subset.var_names``, plots a per-cell scatter of normalized
+  expression against pseudotime and overlays a fitted trend line
+  (default: natural cubic spline with 3 df via ``fit_models`` +
+  ``model_predictions``).
+
+  IMPORTANT — ``adata_subset`` must be the **subset** of the AnnData
+  restricted to the genes of interest (typically the top hits from
+  ``graph_test``). The function raises if ``n_vars > 100``. Pass cells
+  along a single lineage (e.g. ``adata[adata.obs['cell_type'].isin([...])]``)
+  for cleaner traces.
+
+  Trend line internally calls ``fit_models(sub, trend_formula)`` with the
+  default formula ``"~ splines::ns(pseudotime, df=3)"`` — patsy auto-aliases
+  ``monocle3_pseudotime`` to ``pseudotime``.
+parameters:
+  - name: adata_subset
+    type: AnnData
+    required: true
+    description: "Subsetted AnnData (n_vars <= 100). Must have monocle3_pseudotime + Size_Factor."
+  - name: min_expr
+    type: "float | None"
+    required: false
+    default: null
+    description: "Floor for expression + trend (NULL → 0 after data prep)."
+  - name: cell_size
+    type: float
+    required: false
+    default: 0.75
+  - name: nrow
+    type: "int | None"
+    required: false
+    default: null
+  - name: ncol
+    type: int
+    required: false
+    default: 1
+  - name: panel_order
+    type: "Sequence[str] | None"
+    required: false
+    default: null
+  - name: color_cells_by
+    type: str
+    required: false
+    default: pseudotime
+    description: "'pseudotime' (default, numeric viridis), 'cluster', 'partition', or any obs column."
+  - name: trend_formula
+    type: str
+    required: false
+    default: "~ splines::ns(pseudotime, df=3)"
+    description: "Patsy/R-style formula; auto-aliased pseudotime, cluster, partition."
+  - name: label_by_short_name
+    type: bool
+    required: false
+    default: true
+  - name: vertical_jitter
+    type: "float | None"
+    required: false
+    default: null
+  - name: horizontal_jitter
+    type: "float | None"
+    required: false
+    default: null
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+requires:
+  adata:
+    obs: [monocle3_pseudotime, Size_Factor]
+writes: {}
+returns_kind: value
+returns_type: Plot
+next: []
+failure_fixes:
+  - when: "KeyError: Run order_cells first."
+    suggest:
+      - "monocle3.order_cells(adata) first. plot_genes_in_pseudotime reads obs.monocle3_pseudotime."
+  - when: "ValueError: adata_subset has more than 100 genes"
+    suggest:
+      - "Subset to the genes of interest: adata_subset = adata[:, gene_ids[:50]]"
+  - when: "NaN trend line / failed fit_models"
+    suggest:
+      - "Some cells have non-finite pseudotime (typical of disconnected partitions). The function auto-drops them; if all cells are dropped, re-run learn_graph(use_partition=False) or pass root_pr_nodes in every partition."
+examples:
+  - "monocle3.plot_genes_in_pseudotime(adata[:, ['MYOD1','MYF5']]).draw()"
+  - "monocle3.plot_genes_in_pseudotime(adata[:, top_genes], color_cells_by='cell_type').draw()"
+tested_on: "monocle3-python@1.4.26"

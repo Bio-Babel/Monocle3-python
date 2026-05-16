@@ -1,0 +1,89 @@
+id: monocle3.plot_percent_cells_positive
+import_path: monocle3.plot_percent_cells_positive
+execution_class: stateless
+intent:
+  - "bar plot of % cells expressing each gene per group"
+  - "marker-gene detection diagnostic with bootstrapped CI"
+description: |
+  Port of R ``plot_percent_cells_positive``. For each gene in
+  ``adata`` (must have ``n_vars <= 100``), computes the fraction of
+  cells with ``count / size_factor > min_expr`` per group, with
+  bootstrapped confidence intervals.
+
+  Y axis defaults to percent (``target_fraction_mean * 100``); set
+  ``plot_as_count=True`` to switch to the raw target count.
+
+  CI quirks faithfully ported (R intentional — see plotting.py:765-774):
+  - Fraction CI uses ``(1-alpha)/2`` and ``1-(1-alpha)/2`` quantiles
+    (standard 95% CI when alpha=0.95).
+  - Raw-count CI uses ``alpha/2`` and ``1-alpha/2`` (narrower — likely
+    a bug in R, but we mirror).
+
+  ``group_cells_by=None`` collapses to a single "All" bin.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+    description: "n_vars <= 100; pass adata[:, marker_ids]."
+  - name: group_cells_by
+    type: "str | None"
+    required: false
+    default: null
+  - name: min_expr
+    type: float
+    required: false
+    default: 0.0
+  - name: nrow
+    type: "int | None"
+    required: false
+    default: null
+  - name: ncol
+    type: int
+    required: false
+    default: 1
+  - name: panel_order
+    type: "Sequence[str] | None"
+    required: false
+    default: null
+  - name: plot_as_count
+    type: bool
+    required: false
+    default: false
+  - name: label_by_short_name
+    type: bool
+    required: false
+    default: true
+  - name: normalize
+    type: bool
+    required: false
+    default: true
+  - name: plot_limits
+    type: "Sequence[float] | None"
+    required: false
+    default: null
+  - name: bootstrap_samples
+    type: int
+    required: false
+    default: 100
+  - name: conf_int_alpha
+    type: float
+    required: false
+    default: 0.95
+  - name: random_seed
+    type: "int | None"
+    required: false
+    default: 0
+requires:
+  adata:
+    obs: [Size_Factor]   # only when normalize=True (default)
+writes: {}
+returns_kind: value
+returns_type: Plot
+next: []
+failure_fixes:
+  - when: "ValueError: adata has more than 100 genes"
+    suggest:
+      - "Subset: adata[:, marker_ids]."
+examples:
+  - "monocle3.plot_percent_cells_positive(adata[:, ['MYOD1','MYF5']], group_cells_by='cluster').draw()"
+tested_on: "monocle3-python@1.4.26"

@@ -1,0 +1,44 @@
+id: monocle3.compare_models
+import_path: monocle3.compare_models
+execution_class: stateless
+intent:
+  - "likelihood-ratio test between two fit_models outputs"
+  - "nested-model DE testing (full vs reduced)"
+description: |
+  Port of R ``compare_models``. Performs a per-gene likelihood-ratio test
+  between two ``fit_models`` outputs that differ in nested formula terms
+  (e.g. ``~ pseudotime + cluster`` vs ``~ cluster``). The LRT statistic
+  is ``2 * |logLik_full - logLik_reduced|`` with df = absolute difference
+  in residual degrees of freedom (clipped to >= 1). p-values are Holm-
+  adjusted within the gene set (R's ``stats::p.adjust`` default).
+
+  Returns a small DataFrame: ``gene_id``, ``gene_short_name``,
+  ``num_cells_expressed``, ``p_value``, ``q_value``. Use this when
+  the *significance of a covariate's contribution* matters more than its
+  point estimate (``coefficient_table`` answers the latter).
+parameters:
+  - name: model_tbl_full
+    type: DataFrame
+    required: true
+    description: "fit_models output with the larger nested formula."
+  - name: model_tbl_reduced
+    type: DataFrame
+    required: true
+    description: "fit_models output with the smaller (nested) formula."
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: DataFrame
+next: []
+failure_fixes:
+  - when: "KeyError: 'gene_id' missing from model tables"
+    suggest:
+      - "Both inputs must come from fit_models; raw model objects won't work."
+  - when: "p_value is NaN for many genes"
+    suggest:
+      - "Quasi-Poisson fits don't expose a finite log-likelihood (R speedglm quirk that we mirror); compare with expression_family='poisson' or 'negbinomial' if LRT is needed."
+examples:
+  - "full = monocle3.fit_models(adata, '~ pseudotime + cluster')"
+  - "reduced = monocle3.fit_models(adata, '~ cluster')"
+  - "lrt = monocle3.compare_models(full, reduced)"
+tested_on: "monocle3-python@1.4.26"

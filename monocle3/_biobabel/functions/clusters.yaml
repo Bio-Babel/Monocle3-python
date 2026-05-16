@@ -1,0 +1,39 @@
+id: monocle3.clusters
+import_path: monocle3.clusters
+execution_class: stateless
+intent:
+  - "read cluster assignments after cluster_cells"
+  - "access membership Series"
+description: |
+  Accessor that returns cluster assignments as a `pandas.Series` (categorical),
+  indexed by cell name. Reads from `uns["monocle3"]["clusters"][reduction_method]["membership"]`
+  (NOT directly from obs — cluster_cells stores per-reduction data in uns;
+  obs is only populated for the most-recent reduction_method).
+
+  Use this accessor rather than `adata.obs["monocle3_clusters"]` if you have
+  clustered on multiple reductions — the obs column gets overwritten, but
+  the uns dict keeps all of them.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+    description: "Reduction whose clustering to read. Must match cluster_cells call."
+requires:
+  adata:
+    uns: ["monocle3.clusters"]
+writes: {}
+returns_kind: value
+returns_type: Series
+next: [monocle3.plot_cells, monocle3.top_markers]
+failure_fixes:
+  - when: "KeyError on uns access"
+    suggest:
+      - "monocle3.cluster_cells(adata, reduction_method='...') first."
+examples:
+  - "labels = monocle3.clusters(adata)"
+  - "labels = monocle3.clusters(adata, reduction_method='tSNE')"
+tested_on: "monocle3-python@1.4.26"

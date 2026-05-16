@@ -1,0 +1,31 @@
+id: monocle3.load_packer_embryo
+import_path: monocle3.load_packer_embryo
+execution_class: stateless
+intent:
+  - "load the Packer et al. 2019 C. elegans embryo tutorial dataset"
+description: |
+  Loads the Packer et al. 2019 *C. elegans* embryo dataset used by the
+  ``c_elegans_embryo_v2.ipynb`` tutorial. Returns an
+  ``anndata.AnnData`` of shape ``(6188, 20222)`` — cells × genes, raw
+  UMI counts in ``X`` as ``scipy.sparse.csr_matrix``.
+
+  ``obs`` columns: time point, batch, loading-background covariates,
+  Packer ``cell.type`` annotation. ``var`` columns: WBGene id,
+  ``gene_short_name``, ``num_cells_expressed``.
+
+  **First call requires network access** — downloads to
+  ``~/.cache/monocle3-python/packer_embryo.h5ad`` from a Zenodo registry
+  URL; subsequent calls read from the cache.
+parameters: []
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: AnnData
+next: [monocle3.estimate_size_factors, monocle3.preprocess_cds, monocle3.align_cds]
+failure_fixes:
+  - when: "network errors / SSL on first call"
+    suggest:
+      - "Pre-download packer_embryo.h5ad manually and place at ~/.cache/monocle3-python/packer_embryo.h5ad."
+examples:
+  - "adata = monocle3.load_packer_embryo()"
+tested_on: "monocle3-python@1.4.26"

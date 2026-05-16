@@ -1,0 +1,73 @@
+id: monocle3.align_cds
+import_path: monocle3.align_cds
+execution_class: adata_mutation
+intent:
+  - "batch effect correction on PCA/LSI"
+  - "regress out covariates via residualization"
+description: |
+  Align (batch-correct) PCA or LSI coordinates. Two modes that compose:
+
+  1. `residual_model_formula_str` regresses out covariates via patsy design
+     matrix → coords' = coords - X @ beta (beta saved to uns).
+  2. `alignment_group` runs `reduced_mnn` (port of `batchelor::reducedMNN`)
+     for cross-batch alignment with k=alignment_k.
+
+  Writes `obsm.X_aligned` and the alignment metadata to
+  `uns["monocle3"]["Aligned"]`. Downstream `reduce_dimension(method='UMAP', preprocess_method='Aligned')`
+  reads this slot.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: preprocess_method
+    type: str
+    required: false
+    default: PCA
+    description: "'PCA' or 'LSI' — which obsm slot to align."
+  - name: alignment_group
+    type: "str | None"
+    required: false
+    default: null
+    description: "obs column with batch labels. None disables MNN step."
+  - name: alignment_k
+    type: int
+    required: false
+    default: 20
+    description: "k forwarded to reduced_mnn; batchelor default."
+  - name: residual_model_formula_str
+    type: "str | None"
+    required: false
+    default: null
+    description: "R-style formula like '~ bg.300.loading + batch' (no LHS)."
+  - name: build_nn_index
+    type: bool
+    required: false
+    default: false
+  - name: nn_control
+    type: "dict | None"
+    required: false
+    default: null
+requires:
+  adata:
+    obsm: [X_pca]  # or X_lsi if preprocess_method='LSI'
+writes:
+  adata:
+    obsm: [X_aligned]
+    uns: ["monocle3.Aligned"]
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.reduce_dimension]
+failure_fixes:
+  - when: "ValueError: preprocess_method must be 'PCA' or 'LSI'"
+    suggest:
+      - "Only PCA / LSI are alignable. UMAP/tSNE are *outputs* — align upstream PCA first."
+  - when: "KeyError: PCA coordinates not found"
+    suggest:
+      - "monocle3.preprocess_cds(method='PCA') first."
+  - when: "KeyError: alignment_group '...' not in adata.obs"
+    suggest:
+      - "Add the batch column to adata.obs first, or pass an existing column name."
+examples:
+  - "monocle3.align_cds(adata, alignment_group='batch')"
+  - "monocle3.align_cds(adata, residual_model_formula_str='~ bg.300.loading + batch')"
+tested_on: "monocle3-python@1.4.26"

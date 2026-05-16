@@ -1,0 +1,88 @@
+id: monocle3.aggregate_gene_expression
+import_path: monocle3.aggregate_gene_expression
+execution_class: stateless
+intent:
+  - "aggregate expression by gene module and/or cell group"
+  - "produce heatmap input matrix"
+description: |
+  Port of R ``aggregate_gene_expression``. Computes a (gene_group ×
+  cell_group) matrix of summarised expression, where each cell value is
+  ``cell_agg_fun`` (default ``mean``) over the cells in the group of
+  ``gene_agg_fun`` (default ``sum``) over the genes in the module.
+
+  At least one of ``gene_group_df`` / ``cell_group_df`` must be passed.
+  Both DataFrames are addressed by **column position**: column 0 is the
+  id (gene_id, gene_short_name, or cell barcode) and column 1 is the
+  group label — mirrors the R idiom ``gene_group_df[, 1:2]``.
+
+  Used internally by ``top_markers`` (mean/binary aggregation per cluster)
+  and by the embryo tutorial for module heatmaps. ``scale_agg_values=True``
+  z-scores rows after aggregation and clips to ``[min_agg_value,
+  max_agg_value]``.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: gene_group_df
+    type: "pd.DataFrame | None"
+    required: false
+    default: null
+    description: "Two columns: gene id / gene_short_name → module label."
+  - name: cell_group_df
+    type: "pd.DataFrame | None"
+    required: false
+    default: null
+    description: "Two columns: cell barcode → group label."
+  - name: norm_method
+    type: str
+    required: false
+    default: log
+    description: "'log', 'binary', or 'size_only' — passed to normalized_counts()."
+  - name: pseudocount
+    type: float
+    required: false
+    default: 1.0
+  - name: scale_agg_values
+    type: bool
+    required: false
+    default: true
+    description: "Z-score rows after aggregation (R: t(scale(t(.)))). Clipped to [min_agg_value, max_agg_value]."
+  - name: max_agg_value
+    type: float
+    required: false
+    default: 3.0
+  - name: min_agg_value
+    type: float
+    required: false
+    default: -3.0
+  - name: exclude_na
+    type: bool
+    required: false
+    default: true
+  - name: gene_agg_fun
+    type: str
+    required: false
+    default: sum
+    description: "'sum' or 'mean'."
+  - name: cell_agg_fun
+    type: str
+    required: false
+    default: mean
+    description: "'sum' or 'mean'."
+requires:
+  adata:
+    obs: [Size_Factor]   # normalized_counts reads Size_Factor (preprocess.py:272)
+writes: {}
+returns_kind: value
+returns_type: DataFrame
+next: []
+failure_fixes:
+  - when: "ValueError: one of either gene_group_df or cell_group_df must not be None"
+    suggest:
+      - "Pass at least one grouping DataFrame."
+  - when: "KeyError: Size_Factor"
+    suggest:
+      - "monocle3.estimate_size_factors(adata) first."
+examples:
+  - "agg = monocle3.aggregate_gene_expression(adata, gene_group_df=modules_df, cell_group_df=cell_type_df)"
+tested_on: "monocle3-python@1.4.26"

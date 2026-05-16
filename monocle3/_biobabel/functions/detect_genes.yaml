@@ -1,0 +1,45 @@
+id: monocle3.detect_genes
+import_path: monocle3.detect_genes
+execution_class: adata_mutation
+intent:
+  - "count cells-per-gene and genes-per-cell above a detection threshold"
+  - "preprocess QC step for filtering low-detection genes"
+description: |
+  Direct port of R's ``detect_genes``. Counts how many cells express each
+  gene above ``min_expr`` (default 0) and how many genes each cell detects.
+  Writes ``var.num_cells_expressed`` and ``obs.num_genes_expressed`` —
+  both consumed by downstream filtering (``fit_models`` reads
+  ``num_cells_expressed`` to populate its output, and tutorials typically
+  subset on ``adata.var["num_cells_expressed"] > N`` before
+  ``preprocess_cds``).
+
+  Canonical position in the R pipeline:
+  ``new_cell_data_set`` → ``detect_genes`` → ``estimate_size_factors`` →
+  ``preprocess_cds`` → ...
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: min_expr
+    type: float
+    required: false
+    default: 0
+    description: "Counts above this threshold are flagged as expressed."
+requires:
+  adata:
+    X: "raw_counts"  # preprocess.py:230, X is read directly
+writes:
+  adata:
+    var: [num_cells_expressed]
+    obs: [num_genes_expressed]
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.estimate_size_factors, monocle3.preprocess_cds]
+failure_fixes:
+  - when: "very low num_cells_expressed for most genes — sparse dataset"
+    suggest:
+      - "Raise min_expr to filter noise, OR filter genes via adata = adata[:, adata.var['num_cells_expressed'] >= N] before preprocess_cds."
+examples:
+  - "monocle3.detect_genes(adata)"
+  - "monocle3.detect_genes(adata, min_expr=0.5)"
+tested_on: "monocle3-python@1.4.26"

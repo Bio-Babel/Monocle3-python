@@ -1,0 +1,70 @@
+id: monocle3.fit_models
+import_path: monocle3.fit_models
+execution_class: stateless
+intent:
+  - "per-gene GLM regression"
+  - "differential expression model fitting"
+description: |
+  Fit one GLM per gene in `adata.var_names`. The formula uses obs column
+  names; monocle3 injects `cluster` / `partition` / `pseudotime` aliases
+  for `monocle3_clusters` / `monocle3_partitions` / `monocle3_pseudotime`
+  if present, so you can write `~ pseudotime` without manually renaming.
+
+  Returns a tidy DataFrame (gene per row) — **does NOT mutate adata**.
+  Pass the returned DataFrame to `coefficient_table` / `evaluate_fits`
+  / `compare_models` / `model_predictions`.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: model_formula_str
+    type: str
+    required: true
+    description: "R-style formula RHS, e.g. '~ pseudotime' or '~ cluster + sex'. Leading '~' optional."
+  - name: expression_family
+    type: str
+    required: false
+    default: quasipoisson
+    description: "'quasipoisson' (default), 'poisson', 'binomial', 'negbinomial', 'gaussian', 'zinegbinomial'. 'mixed-negbinomial' raises NotImplementedError."
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+  - name: cores
+    type: int
+    required: false
+    default: 1
+    description: "Currently ignored (no parallel backend)."
+  - name: clean_model
+    type: bool
+    required: false
+    default: true
+  - name: verbose
+    type: bool
+    required: false
+    default: false
+requires:
+  adata:
+    obs: [Size_Factor]
+writes: {}  # returns DataFrame; does NOT mutate adata
+returns_kind: value
+returns_type: DataFrame
+next: [monocle3.coefficient_table, monocle3.evaluate_fits, monocle3.compare_models]
+failure_fixes:
+  - when: "KeyError: Size_Factor not found"
+    suggest:
+      - "monocle3.estimate_size_factors(adata) first."
+  - when: "NotImplementedError: mixed-negbinomial"
+    suggest:
+      - "mixed-negbinomial requires lme4::glmer.nb (R). Use 'negbinomial' or 'quasipoisson' instead."
+  - when: "ValueError: expression_family must be one of ..."
+    suggest:
+      - "Pick from: quasipoisson, poisson, binomial, negbinomial, gaussian, zinegbinomial."
+  - when: "patsy PatsyError on formula"
+    suggest:
+      - "Make sure every name in the formula is a column of adata.obs."
+      - "monocle3 auto-aliases monocle3_clusters→cluster, monocle3_partitions→partition, monocle3_pseudotime→pseudotime."
+examples:
+  - "model_tbl = monocle3.fit_models(adata, '~ pseudotime')"
+  - "model_tbl = monocle3.fit_models(adata, '~ cluster + batch', expression_family='negbinomial')"
+tested_on: "monocle3-python@1.4.26"

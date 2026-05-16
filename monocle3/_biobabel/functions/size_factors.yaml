@@ -1,0 +1,33 @@
+id: monocle3.size_factors
+import_path: monocle3.size_factors
+execution_class: stateless
+intent:
+  - "accessor returning per-cell Size_Factor as a Series"
+  - "R-API parity for size_factors(cds) generic"
+description: |
+  Port of R S4 generic ``size_factors(cds)`` (``methods-cell_data_set.R:36-40``).
+  Returns ``adata.obs["Size_Factor"]`` as a ``pandas.Series`` named
+  ``Size_Factor`` and indexed by ``adata.obs_names``.
+
+  Does **not** mutate ``adata`` — it is a read-only accessor. Equivalent
+  to ``adata.obs['Size_Factor']`` directly, but raises a clearer KeyError
+  if ``estimate_size_factors`` has not yet been called.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+requires:
+  adata:
+    obs: [Size_Factor]
+writes: {}
+returns_kind: value
+returns_type: Series
+next: []
+failure_fixes:
+  - when: "KeyError: Size_Factor not found"
+    suggest:
+      - "monocle3.estimate_size_factors(adata) first."
+examples:
+  - "sf = monocle3.size_factors(adata)"
+  - "norm_counts = adata.X / sf.to_numpy()[:, None]"
+tested_on: "monocle3-python@1.4.26"

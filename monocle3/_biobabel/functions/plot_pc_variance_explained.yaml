@@ -1,0 +1,34 @@
+id: monocle3.plot_pc_variance_explained
+import_path: monocle3.plot_pc_variance_explained
+execution_class: stateless
+intent:
+  - "scree plot of PCA variance explained per component"
+  - "diagnostic to pick num_dim for preprocess_cds"
+description: |
+  Port of R ``plot_pc_variance_explained``. Reads the SVD standard
+  deviations stored under ``uns.monocle3.preprocess.PCA.svd_sdev`` and
+  plots ``svd_sdev**2 / sum(svd_sdev**2)`` against PC index. Use to
+  identify the elbow before re-running ``preprocess_cds`` with a tuned
+  ``num_dim``.
+
+  Returns a ggplot2-python plot. Only works after ``preprocess_cds(adata,
+  method='PCA')`` — LSI inputs raise KeyError.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+requires:
+  adata:
+    uns: ["monocle3.preprocess"]   # plotting.py:637 reads PCA model from uns.monocle3.preprocess.PCA
+writes: {}
+returns_kind: value
+returns_type: Plot
+next: []
+failure_fixes:
+  - when: "KeyError: Run preprocess_cds(method='PCA') first."
+    suggest:
+      - "monocle3.preprocess_cds(adata, method='PCA')"
+      - "LSI is not supported by this function (no equivalent sdev decomposition in the LSI model)."
+examples:
+  - "monocle3.plot_pc_variance_explained(adata).draw()"
+tested_on: "monocle3-python@1.4.26"

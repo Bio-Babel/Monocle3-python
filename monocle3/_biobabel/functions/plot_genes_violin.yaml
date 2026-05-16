@@ -1,0 +1,80 @@
+id: monocle3.plot_genes_violin
+import_path: monocle3.plot_genes_violin
+execution_class: stateless
+intent:
+  - "violin plot of gene expression per cell group"
+  - "marker-gene per-cluster distribution"
+description: |
+  Port of R ``plot_genes_violin``. One faceted violin per gene in
+  ``adata_subset.var_names`` (raises if ``n_vars > 100``). A small black
+  dot marks the median per violin.
+
+  Subtle R semantics preserved:
+  - ``pseudocount > 0`` adds **1** to counts (R quirk — "pseudocount > 0
+    is reset to 1"), NOT the value of pseudocount.
+  - ``normalize=True`` divides by ``Size_Factor`` (NOT a percent flag).
+  - ``log_scale`` applies ``scale_y_log10()`` as an *axis transform* —
+    data is not pre-logged.
+  - ``min_expr`` floors values below it (does NOT filter cells).
+parameters:
+  - name: adata_subset
+    type: AnnData
+    required: true
+    description: "n_vars <= 100; pass adata[:, marker_ids]."
+  - name: group_cells_by
+    type: "str | None"
+    required: false
+    default: null
+    description: "Any obs column; None → single 'All' bin."
+  - name: min_expr
+    type: float
+    required: false
+    default: 0.0
+  - name: nrow
+    type: "int | None"
+    required: false
+    default: null
+  - name: ncol
+    type: int
+    required: false
+    default: 1
+  - name: panel_order
+    type: "Sequence[str] | None"
+    required: false
+    default: null
+  - name: label_by_short_name
+    type: bool
+    required: false
+    default: true
+  - name: normalize
+    type: bool
+    required: false
+    default: true
+    description: "Divide raw counts by Size_Factor before plotting."
+  - name: log_scale
+    type: bool
+    required: false
+    default: true
+    description: "Apply scale_y_log10() as an axis transform."
+  - name: pseudocount
+    type: float
+    required: false
+    default: 0.0
+    description: "R quirk: any pseudocount > 0 → counts + 1 (NOT counts + pseudocount)."
+requires:
+  adata:
+    obs: [Size_Factor]   # only when normalize=True (the default)
+writes: {}
+returns_kind: value
+returns_type: Plot
+next: []
+failure_fixes:
+  - when: "ValueError: adata_subset has more than 100 genes"
+    suggest:
+      - "Subset to the genes of interest before calling: adata_subset = adata[:, marker_ids[:20]]."
+  - when: "KeyError: group_cells_by '...' not in obs"
+    suggest:
+      - "Pass an existing obs column or None (single 'All' bin)."
+examples:
+  - "monocle3.plot_genes_violin(adata[:, ['MYOD1','MYH7']], group_cells_by='cluster').draw()"
+tested_on: "monocle3-python@1.4.26"

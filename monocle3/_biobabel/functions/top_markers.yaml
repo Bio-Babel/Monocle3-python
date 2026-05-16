@@ -1,0 +1,67 @@
+id: monocle3.top_markers
+import_path: monocle3.top_markers
+execution_class: stateless
+intent:
+  - "identify specific marker genes per cluster/partition"
+  - "rank genes by group-specificity score"
+description: |
+  Compute group-specific marker genes. Computes:
+  - `mean_expression`: size-factor normalized mean per (gene, group)
+  - `fraction_expressing`: % of cells expressing per (gene, group)
+  - `specificity`: 1 - JS-distance vs uniform-across-groups
+  - `marker_score`: fraction_expressing * specificity (composite rank)
+
+  Optionally fits a logistic regression per (gene, group) vs reference
+  cells for `pseudo_R2` / `marker_test_p_value` / `marker_test_q_value`.
+
+  Returns a tidy DataFrame; **does NOT mutate adata**.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: group_cells_by
+    type: str
+    required: false
+    default: cluster
+    description: "'cluster' (reads via clusters()), 'partition', or any obs column name."
+  - name: genes_to_test_per_group
+    type: int
+    required: false
+    default: 25
+    description: "Top N by marker_score retained per group."
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+  - name: marker_sig_test
+    type: bool
+    required: false
+    default: true
+    description: "If True, runs per-gene logistic vs reference_cells for p/q values."
+  - name: reference_cells
+    type: "int | Sequence[str] | None"
+    required: false
+    default: null
+    description: "int: balanced sample of N cells across groups. List: explicit cell names. None: all cells."
+  - name: speedglm_maxiter
+    type: int
+    required: false
+    default: 25
+requires:
+  adata:
+    obs: [monocle3_clusters]  # if group_cells_by='cluster'; or monocle3_partitions for 'partition'
+writes: {}
+returns_kind: value
+returns_type: DataFrame
+next: [monocle3.plot_genes_by_group, monocle3.generate_garnett_marker_file]
+failure_fixes:
+  - when: "group_cells_by='cluster' but cluster_cells not yet run"
+    suggest:
+      - "monocle3.cluster_cells(adata) first."
+  - when: "KeyError: group_cells_by '...' not in adata.obs"
+    suggest:
+      - "Either run cluster_cells (for 'cluster'/'partition') or pass an existing obs column name."
+examples:
+  - "markers = monocle3.top_markers(adata, group_cells_by='cluster')"
+  - "markers = monocle3.top_markers(adata, group_cells_by='cell_type', reference_cells=1000)"
+tested_on: "monocle3-python@1.4.26"

@@ -1,0 +1,36 @@
+id: monocle3.pseudotime
+import_path: monocle3.pseudotime
+execution_class: stateless
+intent:
+  - "read pseudotime values after order_cells"
+description: |
+  Accessor — returns `adata.obs["monocle3_pseudotime"]` as a Series.
+  Equivalent to `adata.obs["monocle3_pseudotime"]` directly, but raises a
+  helpful KeyError if order_cells has not been run.
+
+  `reduction_method` is accepted for R-API parity but ignored — only one
+  pseudotime column lives in obs.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+    description: "Accepted for parity; not used (only one pseudotime col exists)."
+requires:
+  adata:
+    obs: [monocle3_pseudotime]
+writes: {}
+returns_kind: value
+returns_type: Series
+next: [monocle3.plot_genes_in_pseudotime, monocle3.fit_models, monocle3.graph_test]
+failure_fixes:
+  - when: "KeyError: monocle3_pseudotime not found. Run order_cells first."
+    suggest:
+      - "monocle3.order_cells(adata, root_pr_nodes=[...]) first."
+      - "order_cells needs learn_graph already done."
+examples:
+  - "pt = monocle3.pseudotime(adata)"
+tested_on: "monocle3-python@1.4.26"

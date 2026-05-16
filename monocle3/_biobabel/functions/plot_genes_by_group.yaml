@@ -1,0 +1,99 @@
+id: monocle3.plot_genes_by_group
+import_path: monocle3.plot_genes_by_group
+execution_class: stateless
+intent:
+  - "dot plot of marker expression per cluster / cell group"
+  - "Seurat-style DotPlot for monocle3"
+description: |
+  Port of R ``plot_genes_by_group``. Dot plot where dot color encodes
+  mean log-expression (``log(normalized_counts + pseudocount)``, clipped
+  to ``[scale_min, scale_max]``) and dot size encodes fraction of cells
+  in the group expressing the gene above ``lower_threshold``.
+
+  ``ordering_type`` controls row/column order:
+  - ``cluster_row_col``: pheatmap Ward.D2 clustering on correlation distance.
+  - ``maximal_on_diag``: groups sorted by # of genes for which they're max.
+  - ``none``: preserve input marker order.
+
+  ``flip_percentage_mean=True`` swaps the size/color aesthetics so size
+  encodes mean and color encodes percentage. ``axis_order='marker_group'``
+  applies ``coord_flip()``.
+
+  At least 2 distinct groups required (R raises with "Only one type in
+  group_cells_by").
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: markers
+    type: "Sequence[str]"
+    required: true
+    description: "Gene ids or gene_short_names to plot. Resolved automatically."
+  - name: group_cells_by
+    type: str
+    required: false
+    default: cluster
+    description: "'cluster', 'partition', or any obs column."
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+  - name: norm_method
+    type: str
+    required: false
+    default: log
+    description: "'log' or 'size_only'."
+  - name: lower_threshold
+    type: float
+    required: false
+    default: 0.0
+    description: "Cells with expression > this contribute to percentage."
+  - name: max_size
+    type: float
+    required: false
+    default: 10
+  - name: ordering_type
+    type: str
+    required: false
+    default: cluster_row_col
+    description: "'cluster_row_col', 'maximal_on_diag', or 'none'."
+  - name: axis_order
+    type: str
+    required: false
+    default: group_marker
+    description: "'group_marker' or 'marker_group' (latter applies coord_flip)."
+  - name: flip_percentage_mean
+    type: bool
+    required: false
+    default: false
+  - name: pseudocount
+    type: float
+    required: false
+    default: 1.0
+  - name: scale_max
+    type: float
+    required: false
+    default: 3.0
+  - name: scale_min
+    type: float
+    required: false
+    default: -3.0
+requires:
+  adata:
+    obs: [Size_Factor]
+    uns: ["monocle3.clusters"]   # only when group_cells_by='cluster' or 'partition' (default)
+writes: {}
+returns_kind: value
+returns_type: Plot
+next: []
+failure_fixes:
+  - when: "ValueError: Only one type in group_cells_by"
+    suggest:
+      - "Re-run cluster_cells with a higher resolution or pick an obs column with >= 2 levels."
+  - when: "ValueError: None of the provided genes were found in adata"
+    suggest:
+      - "Check gene id vs gene_short_name resolution — pass either form, but every entry must exist somewhere in adata.var."
+examples:
+  - "monocle3.plot_genes_by_group(adata, ['MYOD1','MYF5','MYH7']).draw()"
+  - "monocle3.plot_genes_by_group(adata, markers, group_cells_by='cell_type', ordering_type='maximal_on_diag').draw()"
+tested_on: "monocle3-python@1.4.26"

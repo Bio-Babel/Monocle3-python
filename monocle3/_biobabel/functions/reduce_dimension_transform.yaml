@@ -1,0 +1,59 @@
+id: monocle3.reduce_dimension_transform
+import_path: monocle3.reduce_dimension_transform
+execution_class: adata_mutation
+intent:
+  - "project new query cells onto reference UMAP / tSNE embedding"
+  - "sklearn-style transform of fitted UMAP/tSNE model"
+description: |
+  Port of R ``reduce_dimension_transform``. Looks up the fitted
+  ``umap.UMAP`` or ``openTSNE.TSNEEmbedding`` model stored at
+  ``ref_adata.uns.monocle3.reduce_dim[reduction_method].model`` and calls
+  its ``.transform()`` method on the query's preprocessed coordinates.
+
+  Assumes the query has already been projected by ``preprocess_transform``
+  (so ``query_adata.obsm["X_<preprocess_method>"]`` exists in the
+  reference feature space). ``preprocess_method`` defaults to whatever
+  was used when training the reference UMAP (read from
+  ``reduce_dim_meta["preprocess_method"]``).
+
+  Writes ``query_adata.obsm["X_umap"]`` (or ``X_tsne``).
+parameters:
+  - name: query_adata
+    type: AnnData
+    required: true
+    description: "Must have obsm['X_pca'] / X_lsi / X_aligned from preprocess_transform."
+  - name: ref_adata
+    type: AnnData
+    required: true
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+    description: "'UMAP' or 'tSNE'."
+  - name: preprocess_method
+    type: "str | None"
+    required: false
+    default: null
+    description: "'PCA', 'LSI', or 'Aligned'. Defaults to reduce_dim_meta.preprocess_method."
+requires:
+  query_adata:
+    obsm: [X_pca]   # OR X_lsi / X_aligned matching preprocess_method
+  ref_adata:
+    uns: ["monocle3.reduce_dim"]
+writes:
+  query_adata:
+    obsm: [X_umap, X_tsne]   # X_umap by default, X_tsne when reduction_method='tSNE'
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.transfer_cell_labels]
+failure_fixes:
+  - when: "KeyError: reference has no fitted UMAP model"
+    suggest:
+      - "monocle3.reduce_dimension(ref_adata, reduction_method='UMAP') first — the fitted umap.UMAP is cached in uns.monocle3.reduce_dim.UMAP.model."
+  - when: "KeyError: query missing X_pca"
+    suggest:
+      - "Run monocle3.preprocess_transform(query, ref) first, OR pass preprocess_method matching whatever obsm slot exists (e.g. 'LSI' or 'Aligned')."
+examples:
+  - "monocle3.preprocess_transform(query, ref)"
+  - "monocle3.reduce_dimension_transform(query, ref)"
+tested_on: "monocle3-python@1.4.26"

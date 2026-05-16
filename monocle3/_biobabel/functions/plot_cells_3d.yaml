@@ -1,0 +1,97 @@
+id: monocle3.plot_cells_3d
+import_path: monocle3.plot_cells_3d
+execution_class: stateless
+intent:
+  - "3D scatter of cells in a 3-component reduction"
+  - "interactive trajectory inspection"
+description: |
+  3D variant of ``plot_cells``. Returns a ``plotly.graph_objects.Figure``
+  (this is the ONLY entry point in monocle3-python that uses plotly).
+  Requires a 3-component reduction — e.g.
+  ``reduce_dimension(adata, max_components=3)`` first.
+
+  Color channels mirror ``plot_cells``: 'cluster', 'partition',
+  'pseudotime', any obs column, or expression of supplied ``genes``.
+  When ``show_trajectory_graph=True`` and ``uns.monocle3.principal_graph``
+  exists, principal-graph edges are drawn as 3D line segments.
+
+  Categorical colours use ``RColorBrewer::brewer.pal(N, "Set2")``
+  (recycled when categories > 8); numeric/expression uses the
+  ``color_scale`` viridis colorbar.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: dims
+    type: "Sequence[int]"
+    required: false
+    default: [1, 2, 3]
+    description: "1-based dim indices into obsm['X_<reduction>']."
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+  - name: color_cells_by
+    type: str
+    required: false
+    default: cluster
+  - name: genes
+    type: "Sequence[str] | DataFrame | None"
+    required: false
+    default: null
+  - name: show_trajectory_graph
+    type: bool
+    required: false
+    default: true
+  - name: trajectory_graph_color
+    type: str
+    required: false
+    default: black
+  - name: trajectory_graph_segment_size
+    type: float
+    required: false
+    default: 5
+  - name: norm_method
+    type: str
+    required: false
+    default: log
+    description: "'log' or 'size_only'."
+  - name: color_palette
+    type: "Sequence | None"
+    required: false
+    default: null
+    description: "Override for categorical colors. Default: brewer Set2."
+  - name: color_scale
+    type: str
+    required: false
+    default: Viridis
+  - name: cell_size
+    type: float
+    required: false
+    default: 25
+  - name: alpha
+    type: float
+    required: false
+    default: 1.0
+  - name: min_expr
+    type: float
+    required: false
+    default: 0.1
+requires:
+  adata:
+    obsm: [X_umap]   # must have at least 3 components; or X_tsne/X_pca etc per reduction_method
+writes: {}
+returns_kind: value
+returns_type: Figure
+next: []
+failure_fixes:
+  - when: "KeyError: No UMAP reduction. Run reduce_dimension(max_components=3) first."
+    suggest:
+      - "monocle3.reduce_dimension(adata, max_components=3) — default is 2D so 3 components must be requested explicitly."
+  - when: "ValueError: reduction_method must have at least 3 components for plot_cells_3d"
+    suggest:
+      - "Re-run reduce_dimension with max_components=3."
+examples:
+  - "fig = monocle3.plot_cells_3d(adata, color_cells_by='pseudotime')"
+  - "fig.show()  # in a Jupyter notebook"
+tested_on: "monocle3-python@1.4.26"

@@ -1,0 +1,37 @@
+id: monocle3.evaluate_fits
+import_path: monocle3.evaluate_fits
+execution_class: stateless
+intent:
+  - "per-gene goodness-of-fit summary (broom::glance equivalent)"
+  - "inspect AIC / BIC / deviance from fit_models"
+description: |
+  Port of R ``evaluate_fits``. Returns a ``broom::glance``-style row per
+  gene: ``null_deviance``, ``df_null``, ``logLik``, ``AIC``, ``BIC``,
+  ``deviance``, ``df_residual``, merged with every existing column of the
+  input fit table (minus ``model``, ``model_summary``, ``_design_info``).
+
+  R quirks faithfully ported (see expr_models.py:_glance_one):
+  - ``negbin`` (MASS::glm.nb)   → BIC = AIC (R verbatim).
+  - ``zeroinfl`` (pscl)         → null_deviance / deviance = NaN; BIC = AIC.
+  - ``speedglm`` (poisson/quasi)→ BIC = NaN; quasi-family fits also have
+    NaN logLik and AIC (R speedglm doesn't define them for quasi).
+
+  Operates only on the fit table; **does not mutate adata**.
+parameters:
+  - name: model_tbl
+    type: DataFrame
+    required: true
+    description: "Output of fit_models() — needs the 'model' column."
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: DataFrame
+next: [monocle3.compare_models]
+failure_fixes:
+  - when: "All AIC values are NaN"
+    suggest:
+      - "fit_models was called with expression_family='quasipoisson' (the default). Quasi-Poisson has no proper likelihood; re-run with expression_family='poisson' or 'negbinomial' to populate AIC/BIC."
+examples:
+  - "fit_tbl = monocle3.fit_models(adata, '~ pseudotime', expression_family='negbinomial')"
+  - "glance = monocle3.evaluate_fits(fit_tbl)"
+tested_on: "monocle3-python@1.4.26"

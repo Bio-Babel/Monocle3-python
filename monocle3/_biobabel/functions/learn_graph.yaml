@@ -1,0 +1,54 @@
+id: monocle3.learn_graph
+import_path: monocle3.learn_graph
+execution_class: adata_mutation
+intent:
+  - "pseudotime trajectory"
+  - "fit principal graph over UMAP embedding (SimplePPT)"
+description: |
+  Fit a principal graph over adata.obsm["X_umap"] using SimplePPT. The graph
+  is stored in adata.uns["monocle3"]["principal_graph"]["UMAP"] and is the
+  backbone for pseudotime ordering by order_cells.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: use_partition
+    type: bool
+    required: false
+    default: true
+    description: "Fit a separate graph per partition (preserves disconnected trajectories)."
+  - name: close_loop
+    type: bool
+    required: false
+    default: true
+  - name: learn_graph_control
+    type: "dict | None"
+    required: false
+    default: null
+    description: |
+      Tuning dict: keys include euclidean_distance_ratio, geodesic_distance_ratio,
+      minimal_branch_len, prune_graph, ncenter, nn.k, maxiter, eps, L1.gamma, L1.sigma.
+requires:
+  adata:
+    obsm: [X_umap]
+    obs: [monocle3_partitions]   # only required when use_partition=True (the default)
+writes:
+  adata:
+    uns: ["monocle3.principal_graph", "monocle3.principal_graph_aux"]
+    # principal_graph_aux carries dp_mst, stree, R, pr_graph_cell_proj_*
+    # which order_cells reads at order_cells.py:104-110 — must be declared
+    # so check_prerequisites detects it correctly.
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.order_cells]
+failure_fixes:
+  - when: "obs.monocle3_partitions missing"
+    suggest: ["monocle3.cluster_cells"]
+    explanation: "learn_graph defaults to use_partition=True, which needs partitions."
+  - when: "very sparse / disconnected graph"
+    suggest:
+      - "Tune learn_graph_control.minimal_branch_len lower (default 10)"
+      - "Set close_loop=False if the trajectory should not loop"
+examples:
+  - "monocle3.learn_graph(adata)"
+tested_on: "monocle3-python@1.4.26"

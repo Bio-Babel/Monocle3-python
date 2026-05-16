@@ -1,0 +1,72 @@
+id: monocle3.fix_missing_cell_labels
+import_path: monocle3.fix_missing_cell_labels
+execution_class: adata_mutation
+intent:
+  - "fill in NaN / None labels via intra-query kNN majority vote"
+  - "post-process transfer_cell_labels output"
+description: |
+  Port of R ``fix_missing_cell_labels``. Partitions ``query_adata`` into
+  cells with a label in ``from_column_name`` and cells without. Builds
+  a kNN index on the labeled cells (in reduced-dim space) and assigns
+  each unlabeled cell the ``which_mode`` majority vote of its k nearest
+  labeled neighbors.
+
+  Typically chained after ``transfer_cell_labels`` to recover cells that
+  failed the threshold vote against the reference.
+
+  If no labels are missing, the function is a no-op (optionally copies
+  ``from_column_name`` to ``to_column_name`` if specified).
+parameters:
+  - name: query_adata
+    type: AnnData
+    required: true
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+  - name: from_column_name
+    type: str
+    required: true
+    description: "Existing obs column with some NaN values."
+  - name: to_column_name
+    type: "str | None"
+    required: false
+    default: null
+    description: "Destination; defaults to from_column_name (in-place)."
+  - name: k
+    type: int
+    required: false
+    default: 10
+  - name: top_frac_threshold
+    type: float
+    required: false
+    default: 0.5
+  - name: top_next_ratio_threshold
+    type: float
+    required: false
+    default: 1.5
+  - name: nn_control
+    type: "dict | None"
+    required: false
+    default: null
+requires:
+  query_adata:
+    obsm: [X_umap]   # or X_<reduction_method>
+    obs: ["<from_column_name>"]
+writes:
+  query_adata:
+    obs: ["<to_column_name> (or from_column_name)"]
+returns_kind: same_object
+returns_type: AnnData
+next: []
+failure_fixes:
+  - when: "ValueError: from_column_name is required"
+    suggest:
+      - "Pass from_column_name explicitly."
+  - when: "KeyError: query has no UMAP reduction"
+    suggest:
+      - "Run preprocess_transform + reduce_dimension_transform first, OR pass reduction_method that already exists in obsm."
+examples:
+  - "monocle3.transfer_cell_labels(query, ref, ref_column_name='cell_type')"
+  - "monocle3.fix_missing_cell_labels(query, from_column_name='cell_type')"
+tested_on: "monocle3-python@1.4.26"

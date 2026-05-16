@@ -1,0 +1,50 @@
+id: monocle3.generate_garnett_marker_file
+import_path: monocle3.generate_garnett_marker_file
+execution_class: stateless
+intent:
+  - "export top markers to a Garnett-format text file"
+description: |
+  Port of R ``generate_garnett_marker_file``. Writes a plain-text marker
+  file in Garnett's expected format (one block per cell group,
+  ``> <name>`` header then ``expressed: <comma-separated genes>``).
+  Used to seed a Garnett classifier from monocle3 top_markers output.
+
+  Niche export — only useful if you plan to fit a Garnett classifier
+  downstream.
+
+  Group names containing ``( ) : > , #`` are sanitized (replaced with ``.``)
+  with a UserWarning. Duplicate marker genes across groups trigger a
+  UserWarning by default; pass ``remove_duplicate_genes=True`` to drop
+  them.
+
+  Side-effect: writes to disk; returns None.
+parameters:
+  - name: marker_test_res
+    type: DataFrame
+    required: true
+    description: "Output of top_markers() — needs gene_id, gene_short_name, cell_group, marker_score."
+  - name: file
+    type: "str | Path"
+    required: false
+    default: "./marker_file.txt"
+  - name: max_genes_per_group
+    type: int
+    required: false
+    default: 10
+  - name: remove_duplicate_genes
+    type: bool
+    required: false
+    default: false
+requires: {}
+writes: {}    # writes to filesystem, not adata
+returns_kind: none
+returns_type: NoneType
+next: []
+failure_fixes:
+  - when: "UserWarning: Group name '...' contained illegal characters"
+    suggest:
+      - "Either rename the cell groups before top_markers, or accept the auto-sanitized version."
+examples:
+  - "markers = monocle3.top_markers(adata)"
+  - "monocle3.generate_garnett_marker_file(markers, file='./markers.txt')"
+tested_on: "monocle3-python@1.4.26"

@@ -1,0 +1,47 @@
+id: monocle3.coefficient_table
+import_path: monocle3.coefficient_table
+execution_class: stateless
+intent:
+  - "extract per-term Wald coefficients + Holm-adjusted q-values"
+  - "tidy DE-summary from a fit_models output"
+description: |
+  Port of R ``coefficient_table``. Consumes a ``fit_models`` output
+  (tidy DataFrame whose ``model`` column carries fitted statsmodels
+  objects) and returns ``broom::tidy``-style rows — one per
+  ``(gene, term, model_component)`` — with Wald estimate, std_err,
+  test_val, p_value, normalized_effect (log2 fold-change vs intercept),
+  and Holm-adjusted ``q_value`` (R default: ``stats::p.adjust(method='holm')``,
+  grouped within ``(model_component, term)``).
+
+  Zero-inflated models (``zipoisson``, ``zinegbinomial``) emit both
+  ``count`` and ``zero`` rows per gene; ``model_component`` distinguishes
+  them. The ``zero`` rows have NaN ``normalized_effect`` to match R.
+
+  Does **not** mutate adata (operates on the fit table only).
+parameters:
+  - name: model_tbl
+    type: DataFrame
+    required: true
+    description: "Output of fit_models(); must have 'model' and '_design_info' columns."
+  - name: pseudo_count
+    type: float
+    required: false
+    default: 0.01
+    description: "Added inside log2 for normalized_effect to stabilize fold-change near zero."
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: DataFrame
+next: [monocle3.evaluate_fits, monocle3.compare_models]
+failure_fixes:
+  - when: "returned DataFrame has 0 rows"
+    suggest:
+      - "All models in fit_models output were None — check fit_models 'status' column for FAIL entries (typical causes: too few non-zero cells per gene, model_formula_str referencing missing obs column)."
+  - when: "want BH-adjusted q-values instead of Holm"
+    suggest:
+      - "R monocle3 uses Holm by default. Compute BH manually: ``from statsmodels.stats.multitest import multipletests; coef_df['q_bh'] = multipletests(coef_df['p_value'], method='fdr_bh')[1]``."
+examples:
+  - "fit_tbl = monocle3.fit_models(adata, '~ pseudotime')"
+  - "coef_df = monocle3.coefficient_table(fit_tbl)"
+  - "sig = coef_df[(coef_df.term == 'pseudotime') & (coef_df.q_value < 0.05)]"
+tested_on: "monocle3-python@1.4.26"

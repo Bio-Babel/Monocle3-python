@@ -1,0 +1,47 @@
+id: monocle3.set_cds_nn_index
+import_path: monocle3.set_cds_nn_index
+execution_class: adata_mutation
+intent:
+  - "attach a prebuilt kNN index to adata.uns"
+description: |
+  Internal primitive — caches an ``nn_index`` dict under
+  ``adata.uns["monocle3"]["nn_index"][reduction_method]`` so downstream
+  ``transfer_cell_labels`` / ``cluster_cells`` can reuse it instead of
+  rebuilding. Typically called from ``preprocess_cds(build_nn_index=True)``
+  or after a manual ``make_nn_index``; agents rarely invoke it directly.
+
+  Indices are stored in-memory only — they are NOT serialised to the
+  h5ad file (matches R behaviour).
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: reduction_method
+    type: str
+    required: true
+    description: "'UMAP', 'PCA', 'LSI', 'Aligned', or 'tSNE' — must match an existing obsm slot."
+  - name: nn_index
+    type: dict
+    required: true
+    description: "Output of make_nn_index."
+  - name: verbose
+    type: bool
+    required: false
+    default: false
+requires:
+  adata:
+    obsm: [X_umap]   # or X_<reduction_method>; nearest_neighbors.py:311-313 raises if matching obsm missing
+writes:
+  adata:
+    uns: ["monocle3.nn_index"]
+returns_kind: same_object
+returns_type: AnnData
+next: []
+failure_fixes:
+  - when: "KeyError: Reduced matrix for ... not found on adata.obsm"
+    suggest:
+      - "Run preprocess_cds / reduce_dimension to populate obsm[f'X_{reduction_method.lower()}'] before attaching the index."
+examples:
+  - "idx = monocle3.make_nn_index(adata.obsm['X_pca'])"
+  - "monocle3.set_cds_nn_index(adata, 'PCA', idx)"
+tested_on: "monocle3-python@1.4.26"

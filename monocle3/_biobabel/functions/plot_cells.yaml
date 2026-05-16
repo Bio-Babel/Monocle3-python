@@ -1,0 +1,109 @@
+id: monocle3.plot_cells
+import_path: monocle3.plot_cells
+execution_class: stateless
+intent:
+  - "2D scatter of cells colored by cluster / pseudotime / gene / module"
+  - "the canonical monocle3 visualization"
+description: |
+  Umbrella 2D cell scatter. The single most-used monocle3 plot. Operates on
+  any reduction (`reduction_method='UMAP'` default). Color channels:
+
+  - `color_cells_by='cluster'` (default) — uses clusters() output
+  - `color_cells_by='partition'` — uses partitions() output
+  - `color_cells_by='pseudotime'` — reads obs.monocle3_pseudotime
+  - `color_cells_by=<obs column>` — any column in adata.obs
+  - `genes=[...]` — facet by gene with expression as color (auto-rescaled if scale_to_range=True)
+  - `genes=<modules_df>` — facet by gene module (output of find_gene_modules)
+
+  If `show_trajectory_graph=True` and a principal graph exists, overlays
+  the principal graph segments + (by default) branch / leaf / root labels.
+
+  Returns a ggplot2-python plot (`ggplot2_py.Plot`); call `.draw()` to render.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: x
+    type: int
+    required: false
+    default: 1
+    description: "1-based dim index (R-style)."
+  - name: y
+    type: int
+    required: false
+    default: 2
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+  - name: color_cells_by
+    type: str
+    required: false
+    default: cluster
+    description: "'cluster', 'partition', 'pseudotime', or any obs column."
+  - name: group_cells_by
+    type: str
+    required: false
+    default: cluster
+    description: "Group label channel for `label_cell_groups`."
+  - name: genes
+    type: "Sequence[str] | DataFrame | None"
+    required: false
+    default: null
+    description: "List of gene IDs for facet-by-gene; DataFrame for modules."
+  - name: show_trajectory_graph
+    type: bool
+    required: false
+    default: true
+  - name: cell_size
+    type: float
+    required: false
+    default: 0.35
+  - name: alpha
+    type: float
+    required: false
+    default: 1.0
+  - name: min_expr
+    type: float
+    required: false
+    default: 0.1
+  - name: rasterize
+    type: bool
+    required: false
+    default: false
+    description: "Warns and falls back to vector — ggrastr-python port pending."
+  - name: scale_to_range
+    type: bool
+    required: false
+    default: true
+    description: "Per-facet rescale expression to 0-100 (legend becomes '% Max')."
+  - name: label_principal_points
+    type: bool
+    required: false
+    default: false
+    description: "If True, suppresses label_branch_points / label_leaves / label_roots."
+requires:
+  adata:
+    obsm: [X_umap]  # or X_tsne/X_pca matching reduction_method
+writes: {}
+returns_kind: value
+returns_type: Plot
+next: []
+failure_fixes:
+  - when: "rasterize=True warning"
+    suggest:
+      - "Just ignore — falls back to vector rendering. ggrastr-python port not yet wired up."
+  - when: "color_cells_by='pseudotime' but pseudotime not computed"
+    suggest:
+      - "monocle3.order_cells(adata) first (which requires learn_graph)."
+  - when: "trajectory graph not shown even though show_trajectory_graph=True"
+    suggest:
+      - "Run monocle3.learn_graph(adata) first."
+  - when: "KeyError: group_cells_by '...' not in obs"
+    suggest:
+      - "Pass 'cluster' / 'partition' (auto-resolved) or an existing obs column name."
+examples:
+  - "monocle3.plot_cells(adata).draw()"
+  - "monocle3.plot_cells(adata, color_cells_by='pseudotime').draw()"
+  - "monocle3.plot_cells(adata, genes=['MYOD1', 'MYF5']).draw()"
+tested_on: "monocle3-python@1.4.26"

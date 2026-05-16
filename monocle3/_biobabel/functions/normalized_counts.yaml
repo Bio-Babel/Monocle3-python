@@ -1,0 +1,54 @@
+id: monocle3.normalized_counts
+import_path: monocle3.normalized_counts
+execution_class: stateless
+intent:
+  - "size-factor-normalize raw counts (optionally log-transform)"
+  - "accessor for plotting / aggregation pipelines"
+description: |
+  Port of R ``normalized_counts``. Divides ``adata.X`` (raw counts) by
+  ``adata.obs["Size_Factor"]`` and optionally applies a transform:
+
+  - ``norm_method='log'`` (default): ``log10(counts/sf + pseudocount)``.
+    Note R quirk preserved: this is **base 10** log, whereas
+    ``preprocess_cds(norm_method='log')`` internally uses **base 2** log.
+  - ``norm_method='binary'``: 0/1 indicator (``counts > 0``), Size_Factor
+    NOT applied.
+  - ``norm_method='size_only'``: ``counts / sf`` (no log).
+
+  Returns a ``scipy.sparse.csr_matrix`` (cells × genes). Does NOT mutate
+  adata.
+
+  For sparse inputs in ``log`` mode, ``pseudocount`` must be 1 (R parity
+  — sparse log1p convention).
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: norm_method
+    type: str
+    required: false
+    default: log
+    description: "'log', 'binary', or 'size_only'."
+  - name: pseudocount
+    type: float
+    required: false
+    default: 1.0
+    description: "Must equal 1 when (sparse input + norm_method='log')."
+requires:
+  adata:
+    obs: [Size_Factor]   # not consulted when norm_method='binary'
+writes: {}
+returns_kind: value
+returns_type: csr_matrix
+next: []
+failure_fixes:
+  - when: "KeyError: Size_Factor"
+    suggest:
+      - "monocle3.estimate_size_factors(adata) first."
+  - when: "ValueError: pseudocount must be 1 for sparse matrices with norm_method='log'"
+    suggest:
+      - "Either set pseudocount=1, switch to norm_method='size_only', or densify adata.X first."
+examples:
+  - "norm = monocle3.normalized_counts(adata)"
+  - "binary = monocle3.normalized_counts(adata, norm_method='binary')"
+tested_on: "monocle3-python@1.4.26"

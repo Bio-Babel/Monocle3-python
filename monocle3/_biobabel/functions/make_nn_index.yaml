@@ -1,0 +1,47 @@
+id: monocle3.make_nn_index
+import_path: monocle3.make_nn_index
+execution_class: builder
+intent:
+  - "build a kNN index over a feature matrix"
+description: |
+  Build a nearest-neighbour index. Typically used **internally** by
+  ``cluster_cells``, ``graph_test``, ``transfer_cell_labels``, and
+  ``preprocess_cds(build_nn_index=True)``; agents rarely call it
+  directly.
+
+  Dispatch (port of R ``nearest_neighbors.R``):
+  - ``method='annoy'`` → pynndescent (approximate)
+  - ``method='hnsw'`` → hnswlib
+  - ``method='nn2'`` is NOT valid here — use ``search_nn_matrix`` with
+    ``nn_control={'method':'nn2'}`` for exact sklearn brute-force.
+
+  Returns a dict ``{method, metric, index, nrow, ncol, matrix}``.
+parameters:
+  - name: subject_matrix
+    type: ndarray
+    required: true
+    description: "(n_items, n_features) dense matrix."
+  - name: nn_control
+    type: "dict | None"
+    required: false
+    default: null
+    description: "Keys: method, metric, n_trees, M, ef_construction, ef, cores, annoy_random_seed, n_neighbors, epsilon."
+  - name: verbose
+    type: bool
+    required: false
+    default: false
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: dict
+next: [monocle3.search_nn_index, monocle3.set_cds_nn_index]
+failure_fixes:
+  - when: "ValueError: method 'nn2' is not valid for make_nn_index"
+    suggest:
+      - "Use monocle3.search_nn_matrix with nn_control={'method':'nn2'} for exact brute-force."
+  - when: "ValueError: metric ... not supported for 'annoy'/'hnsw'"
+    suggest:
+      - "annoy supports euclidean/cosine/manhattan/hamming/dot; hnsw supports euclidean(l2)/cosine/ip."
+examples:
+  - "idx = monocle3.make_nn_index(adata.obsm['X_pca'])"
+tested_on: "monocle3-python@1.4.26"

@@ -1,0 +1,52 @@
+id: monocle3.search_nn_index
+import_path: monocle3.search_nn_index
+execution_class: stateless
+intent:
+  - "query a prebuilt kNN index"
+description: |
+  Query an index built by ``make_nn_index``. Typically called internally
+  by ``transfer_cell_labels`` / ``fix_missing_cell_labels`` /
+  ``cluster_cells``; agents rarely invoke it directly.
+
+  Returns a dict ``{'nn.idx', 'nn.dists'}`` with **1-based** integer
+  indices (R RANN ``nn2`` convention preserved across the package).
+  Subtract 1 to convert to Python indexing.
+
+  Honours ``nn_control['search_k']`` (annoy) by mapping it to
+  pynndescent's ``epsilon``; or ``nn_control['ef']`` (hnsw) for
+  query-time accuracy.
+parameters:
+  - name: query_matrix
+    type: ndarray
+    required: true
+    description: "(n_query, n_features) — same feature space as the index."
+  - name: nn_index
+    type: dict
+    required: true
+    description: "Output of make_nn_index."
+  - name: k
+    type: int
+    required: false
+    default: 25
+  - name: nn_control
+    type: "dict | None"
+    required: false
+    default: null
+  - name: verbose
+    type: bool
+    required: false
+    default: false
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: dict
+next: []
+failure_fixes:
+  - when: "ValueError: ef ... must be >= k"
+    suggest:
+      - "For hnsw, set nn_control['ef'] >= k (default ef=150)."
+examples:
+  - "idx = monocle3.make_nn_index(ref_coords)"
+  - "res = monocle3.search_nn_index(query_coords, idx, k=10)"
+  - "neighbors_0based = res['nn.idx'] - 1  # R returns 1-based"
+tested_on: "monocle3-python@1.4.26"

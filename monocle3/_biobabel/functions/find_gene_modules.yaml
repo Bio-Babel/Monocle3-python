@@ -1,0 +1,104 @@
+id: monocle3.find_gene_modules
+import_path: monocle3.find_gene_modules
+execution_class: stateless
+intent:
+  - "cluster genes into co-regulated modules"
+  - "group trajectory-driving genes for plot_cells(genes=modules_df)"
+description: |
+  Port of R ``find_gene_modules``. Runs UMAP on the per-gene PCA loadings
+  (``svd_v @ diag(svd_sdev)`` stored in ``uns.monocle3.preprocess.PCA``)
+  then Leiden-clusters the gene UMAP into modules. Returns a tidy
+  DataFrame with one row per gene and columns ``id``, ``module``,
+  ``supermodule``, ``dim_1`` (and ``dim_2`` if ``max_components > 1``).
+
+  Output is the *input* to ``plot_cells(genes=modules_df)`` and
+  ``aggregate_gene_expression(gene_group_df=modules_df)`` — pass the
+  q_value-filtered gene list from ``graph_test`` to find co-regulated
+  trajectory programs.
+
+  Does **not** mutate adata. The first column must be the gene id and
+  the second the module label for downstream R-style positional indexing
+  to work.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+    description: "Must have a fitted PCA model under uns.monocle3.preprocess.PCA (run preprocess_cds first)."
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+    description: "Only 'UMAP' supported."
+  - name: max_components
+    type: int
+    required: false
+    default: 2
+  - name: umap_metric
+    type: str
+    required: false
+    default: cosine
+  - name: umap_min_dist
+    type: float
+    required: false
+    default: 0.1
+  - name: umap_n_neighbors
+    type: int
+    required: false
+    default: 15
+  - name: umap_nn_method
+    type: str
+    required: false
+    default: annoy
+    description: "'annoy', 'nndescent', 'fnn', or 'hnsw'. 'annoy'/'nndescent' use pynndescent; 'fnn' is exact sklearn brute force; 'hnsw' uses hnswlib."
+  - name: k
+    type: int
+    required: false
+    default: 20
+    description: "kNN size for the Leiden graph over gene UMAP."
+  - name: leiden_iter
+    type: int
+    required: false
+    default: 1
+  - name: partition_qval
+    type: float
+    required: false
+    default: 0.05
+    description: "q-value threshold for assigning modules to supermodules."
+  - name: resolution
+    type: "float | None"
+    required: false
+    default: null
+  - name: random_seed
+    type: int
+    required: false
+    default: 0
+  - name: preprocess_method
+    type: str
+    required: false
+    default: PCA
+    description: "Which preprocess model to read gene loadings from (PCA or LSI)."
+  - name: nn_control
+    type: "dict | None"
+    required: false
+    default: null
+requires:
+  adata:
+    uns: ["monocle3.preprocess"]   # cluster_genes.py:34 reads svd_v / svd_sdev / gene_names
+writes: {}                          # returns DataFrame; does NOT mutate adata
+returns_kind: value
+returns_type: DataFrame
+next: [monocle3.plot_cells, monocle3.aggregate_gene_expression]
+failure_fixes:
+  - when: "KeyError: No PCA preprocess model. Run preprocess_cds first."
+    suggest:
+      - "monocle3.preprocess_cds(adata, method='PCA') before find_gene_modules."
+  - when: "ValueError: find_gene_modules needs at least 5 genes with loadings."
+    suggest:
+      - "Re-check that you have not over-filtered var_names; gene loadings only exist for genes that survived preprocess_cds."
+  - when: "NotImplementedError: Only reduction_method='UMAP' is supported"
+    suggest:
+      - "Pass reduction_method='UMAP' (tSNE / PCA gene-modules not ported)."
+examples:
+  - "modules_df = monocle3.find_gene_modules(adata[:, sig_genes])"
+  - "monocle3.plot_cells(adata, genes=modules_df, group_cells_by='partition').draw()"
+tested_on: "monocle3-python@1.4.26"

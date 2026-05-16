@@ -1,0 +1,66 @@
+id: monocle3.preprocess_transform
+import_path: monocle3.preprocess_transform
+execution_class: adata_mutation
+intent:
+  - "project new query cells onto a reference PCA/LSI space"
+  - "sklearn-style transform of fitted preprocess model"
+description: |
+  Port of R ``preprocess_transform``. Sub-selects the query to the
+  intersection of its var_names with the reference model's stored
+  ``gene_names``, applies the reference's stored centering / scaling
+  (PCA) or TF-IDF parameters (LSI), then multiplies by the stored
+  rotation matrix.
+
+  Writes the projection to ``query_adata.obsm["X_pca"]`` (or
+  ``X_lsi``). Required prerequisite for ``reduce_dimension_transform``
+  and ``transfer_cell_labels`` workflows.
+
+  Reference must have been produced by ``preprocess_cds`` so its
+  ``uns.monocle3.preprocess[method]`` slot carries ``svd_v``,
+  ``svd_center``, ``svd_scale``, ``norm_method``, ``pseudo_count``,
+  ``gene_names`` (and LSI also stores ``row_sums``, ``col_sums``,
+  ``num_cols``, ``log_scale_tf``, ``frequencies``, ``scale_factor``).
+
+  Raises ``UserWarning`` if fewer than half the query genes overlap the
+  reference gene set.
+parameters:
+  - name: query_adata
+    type: AnnData
+    required: true
+    description: "Must have obs['Size_Factor']."
+  - name: ref_adata
+    type: AnnData
+    required: true
+    description: "Reference with a fitted PCA / LSI model in uns.monocle3.preprocess."
+  - name: method
+    type: str
+    required: false
+    default: PCA
+    description: "'PCA' or 'LSI'."
+requires:
+  query_adata:
+    obs: [Size_Factor]
+  ref_adata:
+    uns: ["monocle3.preprocess"]
+writes:
+  query_adata:
+    obsm: [X_pca, X_lsi]    # X_pca when method='PCA' (default), X_lsi when method='LSI'
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.reduce_dimension_transform]
+failure_fixes:
+  - when: "KeyError: reference has no PCA model"
+    suggest:
+      - "monocle3.preprocess_cds(ref_adata, method='PCA') first."
+  - when: "ValueError: no genes in the query overlap the reference model gene set"
+    suggest:
+      - "Verify both AnnData share var_names — e.g. mismatched gene id vs gene_short_name. The intersection is computed exact-string."
+  - when: "UserWarning: fewer than half the query genes are in the reference"
+    suggest:
+      - "Often safe if the missing genes are lowly expressed. If projection looks degenerate, harmonize the var_names first."
+  - when: "KeyError: Size_Factor missing on query"
+    suggest:
+      - "monocle3.estimate_size_factors(query_adata) before preprocess_transform."
+examples:
+  - "monocle3.preprocess_transform(query, ref, method='PCA')"
+tested_on: "monocle3-python@1.4.26"

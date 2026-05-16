@@ -1,0 +1,64 @@
+schema_version: 2
+
+repo: https://github.com/Bio-Babel/Monocle3-python
+distribution: monocle3-python
+import_name: monocle3
+display_name: "monocle3-python — single-cell trajectory & pseudotime (R Monocle3 port)"
+contract_class: analysis
+tier: 2
+type: domain
+maturity: beta
+
+r_package:
+  package: monocle3
+  repo: https://github.com/cole-trapnell-lab/monocle3
+  version_or_commit: "1.4.26 @ 4f4239a"
+  fidelity: partial
+
+capabilities:
+  - pseudotime
+  - trajectory-inference
+  - principal-graph
+  - leiden-clustering
+  - graph-test
+  - differential-expression
+  - top-markers
+  - label-transfer
+
+domain_tags:
+  - single-cell
+  - scRNA-seq
+  - bioinformatics
+
+task_tags:
+  - pseudotime-trajectory
+  - lineage-analysis
+  - branch-point-detection
+  - cluster-cells
+  - DE-along-pseudotime
+  - umap-projection
+
+foundation: []
+
+triggers:
+  - intent: "pseudotime trajectory"
+    confidence: 0.95
+  - intent: "single cell trajectory analysis"
+    confidence: 0.95
+  - intent: "Monocle3 pipeline on AnnData"
+    confidence: 0.98
+  - intent: "principal graph over cells"
+    confidence: 0.9
+  - intent: "branch point analysis"
+    confidence: 0.85
+
+not_when:
+  - "no clear developmental progression — Monocle3 forces a graph onto unstructured data"
+  - "RNA velocity needed (use scvelo) — Monocle3 does not model splicing dynamics"
+
+recipes:
+  - id: monocle3.basic_trajectory
+    task_tags: [pseudotime-trajectory]
+    path: recipes/basic_trajectory.py
+    description: "Six-step canonical pseudotime pipeline on AnnData with raw counts."
+    expected_artifacts: ["mutated AnnData with obs.pseudotime"]

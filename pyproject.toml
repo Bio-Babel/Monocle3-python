@@ -81,6 +81,8 @@ Documentation            = "https://github.com/Bio-Babel/Monocle3-python#readme"
 "Upstream (R package)"   = "https://github.com/cole-trapnell-lab/monocle3"
 "Tutorial data (Zenodo)" = "https://zenodo.org/records/19712460"
 
+[project.entry-points."biobabel.manifest"]
+monocle3 = "monocle3._biobabel:get_manifest"
 [tool.hatch.build.targets.wheel]
 packages = ["monocle3"]
 
@@ -94,3 +96,6 @@ exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.biobabel]
+contract_class = "analysis"

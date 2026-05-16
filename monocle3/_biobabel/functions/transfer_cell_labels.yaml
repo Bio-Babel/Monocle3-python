@@ -1,0 +1,90 @@
+id: monocle3.transfer_cell_labels
+import_path: monocle3.transfer_cell_labels
+execution_class: adata_mutation
+intent:
+  - "kNN-based label transfer from a reference AnnData"
+  - "annotate query cells using reference embedding"
+description: |
+  Port of R ``transfer_cell_labels``. For each query cell, finds the
+  k nearest reference cells in the chosen reduction (``UMAP`` by default)
+  and transfers a reference obs column:
+
+  - Numeric columns → element-wise mean over the k neighbors
+    (``np.nanmean``, R's ``mean(x, na.rm=TRUE)``).
+  - Categorical / string columns → ``which_mode`` threshold-based
+    majority vote: returns the top label if its fraction exceeds
+    ``top_frac_threshold`` OR its count is ``top_next_ratio_threshold``×
+    the second most frequent. Otherwise returns None / NaN.
+
+  **Prerequisite**: the query must have been projected into the reference
+  space first via ``preprocess_transform`` + ``reduce_dimension_transform``
+  — both embeddings must be directly comparable (same fitted UMAP model).
+
+  Mutates ``query_adata.obs[query_column_name]`` (defaults to
+  ``ref_column_name``) in place.
+parameters:
+  - name: query_adata
+    type: AnnData
+    required: true
+    description: "Must have obsm[f'X_{reduction_method.lower()}'] from reduce_dimension_transform."
+  - name: ref_adata
+    type: AnnData
+    required: true
+    description: "Reference with the column-to-transfer plus the matching reduced-dim embedding."
+  - name: ref_column_name
+    type: str
+    required: true
+    description: "Column in ref_adata.obs to transfer."
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+    description: "'UMAP', 'PCA', 'LSI', 'Aligned', or 'tSNE'."
+  - name: query_column_name
+    type: "str | None"
+    required: false
+    default: null
+    description: "Destination in query_adata.obs. Defaults to ref_column_name."
+  - name: k
+    type: int
+    required: false
+    default: 10
+  - name: top_frac_threshold
+    type: float
+    required: false
+    default: 0.5
+  - name: top_next_ratio_threshold
+    type: float
+    required: false
+    default: 1.5
+  - name: nn_control
+    type: "dict | None"
+    required: false
+    default: null
+requires:
+  query_adata:
+    obsm: [X_umap]   # or X_<reduction_method>
+  ref_adata:
+    obsm: [X_umap]
+writes:
+  query_adata:
+    obs: ["<ref_column_name> (or query_column_name)"]
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.fix_missing_cell_labels]
+failure_fixes:
+  - when: "KeyError: query has no UMAP reduction. Project the query first..."
+    suggest:
+      - "monocle3.preprocess_transform(query, ref); monocle3.reduce_dimension_transform(query, ref) FIRST."
+  - when: "KeyError: ref_column_name not in ref_adata.obs"
+    suggest:
+      - "Check the spelling of ref_column_name; must be a column of ref_adata.obs."
+  - when: "many transferred labels are None / NaN (categorical)"
+    suggest:
+      - "Lower top_frac_threshold (e.g. 0.3) or top_next_ratio_threshold (e.g. 1.2) for more permissive voting."
+      - "Then run fix_missing_cell_labels to fill remaining NaNs by intra-query kNN."
+examples:
+  - "monocle3.preprocess_transform(query, ref)"
+  - "monocle3.reduce_dimension_transform(query, ref)"
+  - "monocle3.transfer_cell_labels(query, ref, ref_column_name='cell_type')"
+tested_on: "monocle3-python@1.4.26"

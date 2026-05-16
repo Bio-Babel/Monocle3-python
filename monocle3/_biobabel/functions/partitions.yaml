@@ -1,0 +1,40 @@
+id: monocle3.partitions
+import_path: monocle3.partitions
+execution_class: stateless
+intent:
+  - "read partition assignments after cluster_cells"
+  - "supercluster (connected-component) labels for use_partition='True' learn_graph"
+description: |
+  Accessor that returns partition assignments as a `pandas.Series` (categorical).
+  Partitions are coarser than clusters — they correspond to connected
+  components of the kNN-Leiden graph (cells in different partitions are
+  treated as disjoint trajectories by learn_graph when use_partition=True).
+
+  Reads from `uns["monocle3"]["clusters"][reduction_method]["partitions"]`
+  (yes, both clusters and partitions are stored under the same `clusters`
+  sub-dict, matching the R monocle3 data layout).
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+requires:
+  adata:
+    uns: ["monocle3.clusters"]  # YES, "clusters" — partitions live inside this
+writes: {}
+returns_kind: value
+returns_type: Series
+next: [monocle3.learn_graph]
+failure_fixes:
+  - when: "want learn_graph to fit a single tree across all cells"
+    suggest:
+      - "monocle3.learn_graph(adata, use_partition=False) — ignores partitions."
+  - when: "KeyError on uns access"
+    suggest:
+      - "monocle3.cluster_cells(adata) first — it writes both clusters and partitions."
+examples:
+  - "p = monocle3.partitions(adata)"
+tested_on: "monocle3-python@1.4.26"

@@ -1,0 +1,86 @@
+id: monocle3.graph_test
+import_path: monocle3.graph_test
+execution_class: stateless
+intent:
+  - "find genes that vary along the trajectory"
+  - "spatial autocorrelation of expression on cell graph"
+description: |
+  Test per-gene spatial autocorrelation against a cell-cell neighbor graph
+  (kNN by default, or the principal_graph projection). Returns a DataFrame
+  with `morans_I` (default) or `geary_C` plus `p_value`, `q_value`, and
+  every existing `adata.var` column.
+
+  - `neighbor_graph='knn'`: pure kNN on UMAP coords.
+  - `neighbor_graph='principal_graph'`: kNN edges further pruned by
+    Jaccard >0 AND by the closest-vertex feasibility mask from
+    `learn_graph` (requires uns.monocle3.principal_graph_aux).
+
+  Only `reduction_method='UMAP'` is currently supported.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: neighbor_graph
+    type: str
+    required: false
+    default: knn
+    description: "'knn' or 'principal_graph'."
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+    description: "Only 'UMAP' supported in v1."
+  - name: k
+    type: int
+    required: false
+    default: 25
+  - name: method
+    type: str
+    required: false
+    default: Moran_I
+    description: "'Moran_I' or 'Geary_C'."
+  - name: alternative
+    type: str
+    required: false
+    default: greater
+    description: "'greater', 'less', or 'two.sided'."
+  - name: expression_family
+    type: str
+    required: false
+    default: quasipoisson
+  - name: cores
+    type: int
+    required: false
+    default: 1
+    description: "Currently ignored."
+  - name: nn_control
+    type: "dict | None"
+    required: false
+    default: null
+requires:
+  adata:
+    obs: [Size_Factor]
+    obsm: [X_umap]
+    # Conditional on neighbor_graph='principal_graph': graph_test.py:215-222 reads
+    # uns.monocle3.principal_graph_aux[UMAP].pr_graph_cell_proj_closest_vertex AND
+    # uns.monocle3.principal_graph[UMAP] (igraph). With neighbor_graph='knn'
+    # (default) these are NOT touched.
+    uns: ["monocle3.principal_graph", "monocle3.principal_graph_aux"]
+writes: {}
+returns_kind: value
+returns_type: DataFrame
+next: [monocle3.find_gene_modules, monocle3.plot_genes_in_pseudotime]
+failure_fixes:
+  - when: "NotImplementedError: Only reduction_method='UMAP' is supported"
+    suggest:
+      - "Use reduction_method='UMAP'. tSNE/PCA paths not ported in v1."
+  - when: "KeyError: No principal graph projection. Run learn_graph first."
+    suggest:
+      - "neighbor_graph='principal_graph' requires monocle3.learn_graph(adata) first."
+  - when: "want to find pseudotime-dependent genes after learn_graph + order_cells"
+    suggest:
+      - "graph_test(adata, neighbor_graph='principal_graph') — sharper than 'knn' once you have a trajectory."
+examples:
+  - "results = monocle3.graph_test(adata)"
+  - "results = monocle3.graph_test(adata, neighbor_graph='principal_graph')"
+tested_on: "monocle3-python@1.4.26"

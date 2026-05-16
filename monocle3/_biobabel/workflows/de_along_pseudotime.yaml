@@ -1,0 +1,34 @@
+id: monocle3.de_along_pseudotime
+description: |
+  Find genes whose expression changes significantly along a pseudotime
+  trajectory. Two complementary tests are available; this workflow runs
+  the graph-autocorrelation path (faster, scales better than per-gene GLM).
+
+  Prerequisites: a complete basic_trajectory pipeline (obsm.X_umap,
+  uns.monocle3.principal_graph, uns.monocle3.principal_graph_aux,
+  obs.monocle3_pseudotime).
+intent:
+  - "differential expression along pseudotime"
+  - "find trajectory-driving genes"
+  - "graph autocorrelation testing"
+inputs:
+  - kind: AnnData
+    description: "Cells × genes AnnData with a full trajectory already computed (run basic_trajectory first)."
+steps:
+  - call: monocle3.graph_test
+    requires: ["obsm.X_umap", "obs.Size_Factor", "uns.monocle3.principal_graph", "uns.monocle3.principal_graph_aux"]
+    writes: []
+    args: {neighbor_graph: "principal_graph", method: "Moran_I"}
+    description: "Moran's I per gene on the principal-graph-pruned cell adjacency. Returns a DataFrame, does NOT mutate adata."
+  - call: monocle3.find_gene_modules
+    requires: ["uns.monocle3.preprocess"]
+    writes: []
+    description: "Optional: cluster trajectory-correlated genes into co-regulated modules. Reads PCA gene loadings (svd_v + svd_sdev + gene_names) from uns.monocle3.preprocess.PCA — runs UMAP on those, NOT on adata.obsm['X_umap']. Pass the q_value-filtered gene list (subset adata first)."
+  - call: monocle3.plot_genes_in_pseudotime
+    requires: ["obs.monocle3_pseudotime", "obs.Size_Factor"]
+    writes: []
+    description: "Visualize top trajectory-driving genes against pseudotime. Returns ggplot2_py.Plot. NOTE: pass a *subset* AnnData (n_vars <= 100); internally calls fit_models for the trend line."
+artifacts:
+  - kind: DataFrame
+    path: "<in-memory>"
+    description: "Tidy gene-level results: morans_I, p_value, q_value, status, plus var columns."

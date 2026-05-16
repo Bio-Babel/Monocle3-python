@@ -1,0 +1,70 @@
+id: monocle3.preprocess_cds
+import_path: monocle3.preprocess_cds
+execution_class: adata_mutation
+intent:
+  - "pseudotime trajectory"
+  - "normalize + reduce dimension to PCA/LSI"
+description: |
+  Normalize counts and project to PCA (default) or LSI. Writes the projected
+  matrix to adata.obsm["X_pca"] (or "X_lsi") and the fitted components to
+  adata.uns["monocle3"]["preprocess"][<method>]. Required step before
+  reduce_dimension and any downstream graph/clustering operation.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: method
+    type: str
+    required: false
+    default: PCA
+    description: "Either 'PCA' or 'LSI'."
+  - name: num_dim
+    type: int
+    required: false
+    default: 50
+  - name: norm_method
+    type: str
+    required: false
+    default: log
+  - name: use_genes
+    type: "Sequence[str] | None"
+    required: false
+    default: null
+    description: "Restrict to a gene subset (typically variable genes)."
+  - name: pseudo_count
+    type: "float | None"
+    required: false
+    default: null
+  - name: scaling
+    type: bool
+    required: false
+    default: true
+  - name: verbose
+    type: bool
+    required: false
+    default: false
+requires:
+  adata:
+    X: "raw_counts"          # read at preprocess.py:535
+    obs: [Size_Factor]       # read at preprocess.py:522, raises if missing
+writes:
+  adata:
+    obsm: [X_pca, X_lsi]     # X_pca when method='PCA' (default); X_lsi when method='LSI'
+    uns: ["monocle3.preprocess", "monocle3.Aligned"]
+    # WARNING — preprocess_cds.py:613-616 sets uns.monocle3.Aligned.beta = None,
+    # invalidating any prior align_cds state. Re-running preprocess_cds after
+    # align_cds clears the alignment.
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.reduce_dimension, monocle3.align_cds]
+failure_fixes:
+  - when: "obs.Size_Factor missing"
+    suggest: ["monocle3.estimate_size_factors"]
+    explanation: "preprocess_cds expects size factors; run estimate_size_factors first."
+  - when: "num_dim larger than min(n_cells, n_genes)"
+    suggest:
+      - "Lower num_dim (typical 30-50 for small datasets)"
+      - "Filter low-detection genes (detect_genes) before this step"
+examples:
+  - "monocle3.preprocess_cds(adata, num_dim=50)"
+tested_on: "monocle3-python@1.4.26"

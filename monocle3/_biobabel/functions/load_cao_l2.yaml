@@ -1,0 +1,30 @@
+id: monocle3.load_cao_l2
+import_path: monocle3.load_cao_l2
+execution_class: stateless
+intent:
+  - "load the Cao et al. 2017 C. elegans L2 tutorial dataset"
+description: |
+  Loads the Cao et al. 2017 *C. elegans* L2 dataset used by the
+  ``c_elegans_L2_v2.ipynb`` tutorial. Returns an
+  ``anndata.AnnData`` of shape ``(42035, 20271)`` — cells × genes,
+  raw counts in ``X`` as ``scipy.sparse.csr_matrix``.
+
+  ``obs`` columns: ``plate``, ``cao_cluster``, ``cao_cell_type``,
+  ``cao_tissue``. ``var`` contains ``gene_short_name``.
+
+  **First call requires network access** — downloads to
+  ``~/.cache/monocle3-python/cao_l2.h5ad`` from a Zenodo registry URL;
+  subsequent calls read from the cache.
+parameters: []
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: AnnData
+next: [monocle3.estimate_size_factors, monocle3.preprocess_cds]
+failure_fixes:
+  - when: "network errors / SSL on first call"
+    suggest:
+      - "Pre-download cao_l2.h5ad manually and place at ~/.cache/monocle3-python/cao_l2.h5ad."
+examples:
+  - "adata = monocle3.load_cao_l2()"
+tested_on: "monocle3-python@1.4.26"

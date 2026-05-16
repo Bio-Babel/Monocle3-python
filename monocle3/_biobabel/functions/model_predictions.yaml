@@ -1,0 +1,50 @@
+id: monocle3.model_predictions
+import_path: monocle3.model_predictions
+execution_class: stateless
+intent:
+  - "predict expression for each gene at user-supplied covariate values"
+  - "evaluate fitted GLM at new pseudotime / cluster grid"
+description: |
+  Port of R ``model_predictions``. For each gene in *model_tbl*, evaluates
+  the fitted GLM at *new_data* and returns an ``(n_genes, n_new_rows)``
+  numpy array. ``type='response'`` (default) → mean-scale predictions;
+  ``type='link'`` → linear-predictor scale (logit / log / etc).
+
+  Used internally by ``plot_genes_in_pseudotime`` to draw the trend line
+  on a per-cell pseudotime grid (R: ``stats::predict(model, newdata=...)``).
+  Returns a numpy array, NOT a DataFrame — rows align with
+  ``model_tbl["gene_id"]``.
+
+  Failures for individual genes are returned as NaN rows (matches R when
+  ``stats::predict`` errors), so the array shape is guaranteed regardless
+  of fit quality.
+parameters:
+  - name: model_tbl
+    type: DataFrame
+    required: true
+    description: "fit_models output (must have model + _design_info)."
+  - name: new_data
+    type: DataFrame
+    required: true
+    description: "Rows = new observations; must include every column referenced in the model formula."
+  - name: type
+    type: str
+    required: false
+    default: response
+    description: "'response' (mean scale) or 'link' (linear predictor)."
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: ndarray
+next: []
+failure_fixes:
+  - when: "TypeError: new_data must be a pandas.DataFrame"
+    suggest:
+      - "Wrap a dict / array in pd.DataFrame() before passing."
+  - when: "Whole row of NaN for a gene"
+    suggest:
+      - "Either the model failed (check model_tbl['status']) or new_data is missing a formula term — every name in the original model_formula_str must be a column of new_data."
+examples:
+  - "new = adata.obs[['pseudotime']].assign(Size_Factor=1.0)"
+  - "preds = monocle3.model_predictions(fit_tbl, new_data=new)"
+tested_on: "monocle3-python@1.4.26"

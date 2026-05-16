@@ -1,0 +1,44 @@
+id: monocle3.search_nn_matrix
+import_path: monocle3.search_nn_matrix
+execution_class: stateless
+intent:
+  - "exact or approximate kNN search without a prebuilt index"
+description: |
+  Internal primitive — pairwise kNN between *query_matrix* and
+  *subject_matrix*. For ``method='nn2'`` uses
+  ``sklearn.neighbors.NearestNeighbors`` (R ``RANN::nn2`` equivalent);
+  otherwise builds a fresh index and searches.
+
+  Typically called by ``graph_test`` to build kNN edges on the fly;
+  agents rarely invoke it directly. Returns ``{'nn.idx', 'nn.dists'}``
+  with 1-based indices (subtract 1 for Python indexing).
+parameters:
+  - name: subject_matrix
+    type: ndarray
+    required: true
+    description: "Items to search over — (n_items, n_features)."
+  - name: query_matrix
+    type: ndarray
+    required: true
+    description: "Queries — (n_query, n_features)."
+  - name: k
+    type: int
+    required: false
+    default: 25
+  - name: nn_control
+    type: "dict | None"
+    required: false
+    default: null
+  - name: verbose
+    type: bool
+    required: false
+    default: false
+requires: {}
+writes: {}
+returns_kind: value
+returns_type: dict
+next: []
+failure_fixes: []
+examples:
+  - "res = monocle3.search_nn_matrix(coords, coords, k=15)  # self-kNN"
+tested_on: "monocle3-python@1.4.26"

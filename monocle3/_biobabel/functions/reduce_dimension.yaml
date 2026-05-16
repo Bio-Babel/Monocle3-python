@@ -1,0 +1,70 @@
+id: monocle3.reduce_dimension
+import_path: monocle3.reduce_dimension
+execution_class: adata_mutation
+intent:
+  - "pseudotime trajectory"
+  - "2D/3D projection (UMAP, tSNE, PCA, LSI, Aligned)"
+description: |
+  Low-dimensional projection of cells. Default is UMAP on the PCA/LSI
+  embedding produced by preprocess_cds. Writes adata.obsm["X_umap"] (or
+  "X_tSNE" / etc.) and is the prerequisite for cluster_cells and learn_graph.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: max_components
+    type: int
+    required: false
+    default: 2
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+    description: "One of 'UMAP', 'tSNE', 'PCA', 'LSI', 'Aligned'."
+  - name: preprocess_method
+    type: "str | None"
+    required: false
+    default: null
+    description: "Defaults to whichever preprocess method was run."
+  - name: umap_metric
+    type: str
+    required: false
+    default: cosine
+  - name: umap_min_dist
+    type: float
+    required: false
+    default: 0.1
+  - name: umap_n_neighbors
+    type: int
+    required: false
+    default: 15
+  - name: cores
+    type: int
+    required: false
+    default: 1
+requires:
+  adata:
+    obsm: [X_pca]   # or X_aligned (preferred when present) or X_lsi (per reduce_dimensions.py:158-167)
+writes:
+  adata:
+    obsm: [X_umap, X_tsne]   # X_umap when reduction_method="UMAP" (default); X_tsne when reduction_method="tSNE"
+    uns: ["monocle3.reduce_dim"]
+# WARNING — destructive side effect (reduce_dimensions.py:287-290):
+# re-running this step CLEARS uns.monocle3.principal_graph[reduction_method],
+# uns.monocle3.principal_graph_aux[...], and uns.monocle3.clusters[...].
+# Running reduce_dimension AFTER learn_graph silently wipes the trajectory.
+# Agents: do not re-run reduce_dimension mid-pipeline once learn_graph has run.
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.cluster_cells, monocle3.learn_graph]
+failure_fixes:
+  - when: "obsm.X_pca missing"
+    suggest: ["monocle3.preprocess_cds"]
+    explanation: "reduce_dimension defaults to UMAP-on-PCA; run preprocess_cds first."
+  - when: "UMAP fails with too few neighbors"
+    suggest:
+      - "Lower umap_n_neighbors (try 5 for very small datasets)"
+      - "Increase cell count by lifting upstream QC filters"
+examples:
+  - "monocle3.reduce_dimension(adata)"
+tested_on: "monocle3-python@1.4.26"

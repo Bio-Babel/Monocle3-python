@@ -1,0 +1,62 @@
+id: monocle3.cluster_cells
+import_path: monocle3.cluster_cells
+execution_class: adata_mutation
+intent:
+  - "pseudotime trajectory"
+  - "Leiden/Louvain community detection on cells"
+description: |
+  Cluster cells via Leiden (default) or Louvain on a kNN graph built from
+  the chosen reduction (UMAP by default). Writes cluster labels to
+  adata.obs and partitions to adata.uns. Required before learn_graph when
+  use_partition=True (the default).
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+  - name: reduction_method
+    type: str
+    required: false
+    default: UMAP
+    description: "One of 'UMAP', 'tSNE', 'PCA', 'LSI', 'Aligned'."
+  - name: k
+    type: int
+    required: false
+    default: 20
+    description: "Number of nearest neighbors."
+  - name: cluster_method
+    type: str
+    required: false
+    default: leiden
+    description: "'leiden' or 'louvain'."
+  - name: num_iter
+    type: int
+    required: false
+    default: 2
+  - name: resolution
+    type: "float | None"
+    required: false
+    default: null
+  - name: random_seed
+    type: "int | None"
+    required: false
+    default: 42
+requires:
+  adata:
+    obsm: [X_umap]  # or X_tsne / X_pca / X_lsi / X_aligned depending on reduction_method arg
+writes:
+  adata:
+    obs: [monocle3_clusters, monocle3_partitions]
+    uns: ["monocle3.clusters"]   # cluster_cells.py:348-359 stores membership/partitions/modularity per reduction_method
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.learn_graph]
+failure_fixes:
+  - when: "obsm.X_umap missing (or whichever reduction_method's slot)"
+    suggest: ["monocle3.reduce_dimension"]
+  - when: "singleton clusters or one giant cluster"
+    suggest:
+      - "Tune resolution (higher → more clusters; default is method-dependent)"
+      - "Increase k for noisier datasets"
+examples:
+  - "monocle3.cluster_cells(adata)"
+tested_on: "monocle3-python@1.4.26"

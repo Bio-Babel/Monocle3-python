@@ -1,0 +1,64 @@
+id: monocle3.new_cell_data_set
+import_path: monocle3.new_cell_data_set
+execution_class: builder
+intent:
+  - "construct an AnnData from R-convention gene-by-cell expression data"
+  - "entry point for a fresh monocle3 session"
+description: |
+  Port of R's ``new_cell_data_set``. Builds an ``anndata.AnnData`` from a
+  **genes × cells** expression matrix (R convention), transposing
+  internally so the returned AnnData is cells × genes per the Python
+  convention. Initialises ``uns["monocle3"]`` namespace and calls
+  ``estimate_size_factors`` so ``obs["Size_Factor"]`` is populated on
+  return — same behaviour as the R constructor.
+
+  Use this when you start from raw counts in R's matrix orientation
+  (e.g. from ``Read10X``-style outputs). If you already have an AnnData
+  in cells × genes orientation, skip this and call
+  ``estimate_size_factors(adata)`` directly.
+
+  Required: ``gene_metadata`` should contain a ``gene_short_name`` column;
+  a UserWarning is raised if missing (most downstream plot functions fall
+  back to ``var_names``, but ``plot_genes_in_pseudotime`` /
+  ``plot_genes_by_group`` use ``gene_short_name`` for facet titles).
+parameters:
+  - name: expression_data
+    type: "np.ndarray | spmatrix | pd.DataFrame"
+    required: true
+    description: "Gene-by-cell raw counts (R convention; transposed internally)."
+  - name: cell_metadata
+    type: "pd.DataFrame | None"
+    required: false
+    default: null
+    description: "One row per cell, in column order of expression_data. Index becomes obs_names."
+  - name: gene_metadata
+    type: "pd.DataFrame | None"
+    required: false
+    default: null
+    description: "One row per gene; must include 'gene_short_name' column. Index becomes var_names."
+  - name: verbose
+    type: bool
+    required: false
+    default: false
+    description: "Unused, retained for R signature parity."
+requires: {}
+writes:
+  adata:
+    obs: [Size_Factor]
+    uns: ["monocle3"]
+returns_kind: value
+returns_type: AnnData
+next: [monocle3.detect_genes, monocle3.preprocess_cds]
+failure_fixes:
+  - when: "TypeError: expression_data must be a numpy array, scipy sparse matrix, or pandas DataFrame"
+    suggest:
+      - "Coerce input via np.asarray() or sp.csr_matrix() before passing."
+  - when: "ValueError: cell_metadata must have the same number of rows as expression_data has columns"
+    suggest:
+      - "Remember R orientation — cell_metadata rows must match expression_data columns (cells)."
+  - when: "UserWarning: gene_metadata must contain a column named 'gene_short_name'"
+    suggest:
+      - "Add adata.var['gene_short_name'] = adata.var_names (or symbol map) before plotting helpers."
+examples:
+  - "adata = monocle3.new_cell_data_set(gene_by_cell_counts, cell_metadata=obs_df, gene_metadata=var_df)"
+tested_on: "monocle3-python@1.4.26"

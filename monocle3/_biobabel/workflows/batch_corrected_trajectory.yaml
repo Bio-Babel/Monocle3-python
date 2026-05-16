@@ -1,0 +1,49 @@
+id: monocle3.batch_corrected_trajectory
+description: |
+  Pseudotime trajectory on a multi-batch dataset, with MNN-based batch
+  correction interposed between PCA and UMAP. Key difference from
+  basic_trajectory: `reduce_dimension` runs on `Aligned` rather than `PCA`,
+  so UMAP sees the corrected coordinates.
+
+  IMPORTANT: align_cds writes obsm.X_aligned; you MUST pass
+  `preprocess_method='Aligned'` to reduce_dimension downstream — otherwise
+  the alignment is silently ignored.
+intent:
+  - "pseudotime trajectory with batch correction"
+  - "multi-batch Monocle3 analysis"
+  - "MNN-corrected trajectory inference"
+inputs:
+  - kind: AnnData
+    description: "Cells × genes with raw UMI counts in X AND an obs column with batch labels."
+steps:
+  - call: monocle3.estimate_size_factors
+    requires: []
+    writes: ["obs.Size_Factor"]
+  - call: monocle3.preprocess_cds
+    requires: ["obs.Size_Factor"]
+    writes: ["obsm.X_pca", "uns.monocle3.preprocess"]
+    args: {num_dim: 50}
+  - call: monocle3.align_cds
+    requires: ["obsm.X_pca"]
+    writes: ["obsm.X_aligned", "uns.monocle3.Aligned"]
+    args: {alignment_group: "<batch column name>"}
+    description: "MNN batch correction. Optionally also regress out covariates via residual_model_formula_str."
+  - call: monocle3.reduce_dimension
+    requires: ["obsm.X_aligned"]
+    writes: ["obsm.X_umap"]
+    args: {preprocess_method: "Aligned"}
+    description: "CRITICAL: preprocess_method='Aligned' — otherwise UMAP reads X_pca and ignores the batch correction."
+  - call: monocle3.cluster_cells
+    requires: ["obsm.X_umap"]
+    writes: ["obs.monocle3_clusters", "obs.monocle3_partitions", "uns.monocle3.clusters"]
+  - call: monocle3.learn_graph
+    requires: ["obsm.X_umap", "obs.monocle3_partitions"]
+    writes: ["uns.monocle3.principal_graph", "uns.monocle3.principal_graph_aux"]
+  - call: monocle3.order_cells
+    requires: ["obsm.X_umap", "uns.monocle3.principal_graph", "uns.monocle3.principal_graph_aux"]
+    writes: ["obs.monocle3_pseudotime", "uns.monocle3.principal_graph_aux"]
+    args: {root_cells: "<user-supplied list of barcodes>"}
+artifacts:
+  - kind: AnnData
+    path: "<in-memory>"
+    description: "Mutated AnnData with full batch-corrected trajectory."

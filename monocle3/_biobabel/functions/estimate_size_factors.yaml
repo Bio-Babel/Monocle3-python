@@ -1,0 +1,49 @@
+id: monocle3.estimate_size_factors
+import_path: monocle3.estimate_size_factors
+execution_class: adata_mutation
+intent:
+  - "pseudotime trajectory"
+  - "normalize raw counts per cell"
+  - "compute per-cell size factor"
+description: |
+  Compute per-cell size factors (R: 'mean-geometric-mean-total' by default) and
+  attach as adata.obs["Size_Factor"]. First step of the canonical Monocle3
+  pseudotime pipeline; required by preprocess_cds.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+    description: "Cells × genes; adata.X is treated as raw counts."
+  - name: round_exprs
+    type: bool
+    required: false
+    default: true
+    description: "Round counts to integers (mirrors R round_exprs)."
+  - name: method
+    type: str
+    required: false
+    default: mean-geometric-mean-total
+    description: "Either 'mean-geometric-mean-total' or 'mean-geometric-mean-log-total'."
+requires:
+  adata:
+    X: "raw_counts"
+writes:
+  adata:
+    obs: [Size_Factor]
+returns_kind: same_object
+returns_type: AnnData
+next: [monocle3.preprocess_cds]
+failure_fixes:
+  - when: "adata.X already log-normalized (max value < 50)"
+    suggest:
+      - "Reload raw counts; estimate_size_factors expects integer-like UMI counts."
+    explanation: |
+      Monocle3 normalizes internally inside preprocess_cds; size factors are computed
+      from raw count totals. Pre-normalized X breaks the size-factor estimate.
+  - when: "all Size_Factor values are NaN"
+    suggest:
+      - "Filter empty genes (detect_genes) before this step; gene-total-zero produces NaN."
+examples:
+  - "monocle3.estimate_size_factors(adata)"
+  - "monocle3.estimate_size_factors(adata, method='mean-geometric-mean-log-total')"
+tested_on: "monocle3-python@1.4.26"

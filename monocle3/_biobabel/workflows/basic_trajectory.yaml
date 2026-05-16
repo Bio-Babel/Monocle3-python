@@ -1,0 +1,55 @@
+id: monocle3.basic_trajectory
+description: |
+  Canonical 7-step pseudotime trajectory pipeline for AnnData with raw UMI
+  counts: detect_genes → size factors → preprocess → reduce_dimension →
+  cluster_cells → learn_graph → order_cells. Each step's `requires` is
+  satisfied by the previous step's `writes`; biobabel.check_prerequisites
+  can validate any step against the current adata state.
+
+  Order rationale (mirrors the R Monocle3 vignette): detect_genes first
+  populates var.num_cells_expressed so the user can filter low-detection
+  genes BEFORE the SVD in preprocess_cds. estimate_size_factors and
+  detect_genes are independent of each other; only their relative order
+  vs preprocess_cds matters.
+intent:
+  - "pseudotime trajectory"
+  - "trajectory inference on single-cell data"
+  - "Monocle3 standard analysis"
+inputs:
+  - kind: AnnData
+    description: "Cells × genes with raw UMI counts in X."
+steps:
+  - call: monocle3.detect_genes
+    requires: []
+    writes: ["var.num_cells_expressed", "obs.num_genes_expressed"]
+    description: "Canonical preprocess step — populates var.num_cells_expressed (used by downstream filtering and fit_models output) and obs.num_genes_expressed (used as a QC covariate)."
+  - call: monocle3.estimate_size_factors
+    requires: []
+    writes: ["obs.Size_Factor"]
+    description: "Per-cell normalization factor."
+  - call: monocle3.preprocess_cds
+    requires: ["obs.Size_Factor"]
+    writes: ["obsm.X_pca", "uns.monocle3.preprocess"]
+    args: {num_dim: 50}
+    description: "Log-normalize and project to PCA (default 50 dims)."
+  - call: monocle3.reduce_dimension
+    requires: ["obsm.X_pca"]
+    writes: ["obsm.X_umap"]
+    description: "UMAP projection from PCA."
+  - call: monocle3.cluster_cells
+    requires: ["obsm.X_umap"]
+    writes: ["obs.monocle3_clusters", "obs.monocle3_partitions"]
+    description: "Leiden communities on the kNN graph."
+  - call: monocle3.learn_graph
+    requires: ["obsm.X_umap", "obs.monocle3_partitions"]
+    writes: ["uns.monocle3.principal_graph", "uns.monocle3.principal_graph_aux"]
+    description: "SimplePPT principal graph over UMAP."
+  - call: monocle3.order_cells
+    requires: ["obsm.X_umap", "uns.monocle3.principal_graph", "uns.monocle3.principal_graph_aux"]
+    writes: ["obs.monocle3_pseudotime", "uns.monocle3.principal_graph_aux"]
+    args: {root_cells: "<user-supplied list of barcodes>"}
+    description: "Pseudotime as shortest-path distance from chosen root. Writes obs.monocle3_pseudotime (NOT obs.pseudotime)."
+artifacts:
+  - kind: AnnData
+    path: "<in-memory>"
+    description: "Mutated AnnData with the full trajectory annotation."

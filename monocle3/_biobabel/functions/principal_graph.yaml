@@ -1,0 +1,34 @@
+id: monocle3.principal_graph
+import_path: monocle3.principal_graph
+execution_class: stateless
+intent:
+  - "accessor returning the principal graph igraph"
+  - "inspect or extract the SimplePPT-fitted backbone"
+description: |
+  Accessor for ``adata.uns["monocle3"]["principal_graph"]`` (a dict
+  keyed by reduction_method → ``igraph.Graph``). The dict is set by
+  ``learn_graph`` and represents the SimplePPT principal graph fitted
+  over the reduced coordinates.
+
+  Raises ``KeyError`` if ``learn_graph`` has not been run yet. Read the
+  igraph attribute ``vs["name"]`` for vertex labels (typically ``Y_<n>``)
+  used by ``order_cells(root_pr_nodes=...)``.
+parameters:
+  - name: adata
+    type: AnnData
+    required: true
+requires:
+  adata:
+    uns: ["monocle3.principal_graph"]
+writes: {}
+returns_kind: value
+returns_type: dict
+next: [monocle3.order_cells]
+failure_fixes:
+  - when: "KeyError: Principal graph not found. Run learn_graph first."
+    suggest:
+      - "monocle3.learn_graph(adata)"
+examples:
+  - "pg = monocle3.principal_graph(adata)"
+  - "node_names = pg['UMAP'].vs['name']  # e.g. ['Y_1', 'Y_2', ...]"
+tested_on: "monocle3-python@1.4.26"
