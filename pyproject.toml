@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "monocle3-python"
-version = "1.4.26"
+version = "1.4.26.post1"
 description = "Python port of the R monocle3 package (tracks cole-trapnell-lab/monocle3 1.4.26 @ 4f4239a) — AnnData-based single-cell trajectory, clustering, and differential expression."
 readme = "README.md"
 requires-python = ">=3.10"

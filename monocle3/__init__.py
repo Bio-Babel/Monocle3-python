@@ -7,7 +7,7 @@ for callers to import directly as well.
 
 from __future__ import annotations
 
-__version__ = "1.4.26"
+__version__ = "1.4.26.post1"
 __r_commit__ = "4f4239a"
 
 from ._accessors import size_factors
